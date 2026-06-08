@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+.env
+
+# Data
+backend/data/vectordb/*
+!backend/data/vectordb/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Playwright CLI debug artifacts
+.playwright-cli/
+
+# Claude
+.claude/
+.agents/
