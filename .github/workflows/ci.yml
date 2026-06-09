@@ -20,6 +20,9 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      # Prisma client must exist before tsc resolves imports from src/prisma/*.
+      - name: Prisma generate
+        run: npm run prisma:generate
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Build

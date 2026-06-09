@@ -1,0 +1,37 @@
+// Minimal Prisma schema for Spike B — just enough to issue $queryRaw against
+// the existing drizzle-managed tables. We intentionally do NOT use `prisma
+// migrate` here; the tables and indexes already exist.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/spike-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Resource {
+  id            String      @id
+  filename      String
+  fileType      String      @map("file_type")
+  source        String
+  sharepointUrl String?     @map("sharepoint_url")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  embeddings    Embedding[]
+
+  @@map("resources")
+}
+
+model Embedding {
+  id         String                       @id
+  resourceId String                       @map("resource_id")
+  content    String
+  embedding  Unsupported("halfvec(2048)")
+  metadata   Json?
+  resource   Resource                     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+  @@map("embeddings")
+}

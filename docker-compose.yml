@@ -25,7 +25,13 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-docwise}:${POSTGRES_PASSWORD:-docwise}@postgres:5432/${POSTGRES_DB:-docwise}
+      # Postgres connection: backend composes the URL from POSTGRES_*.
+      # HOST is hardcoded to the compose service name; the rest come from .env.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-docwise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docwise}
+      POSTGRES_DB: ${POSTGRES_DB:-docwise}
       OPENAI_API_BASE: ${OPENAI_API_BASE}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       CHAT_MODEL: ${CHAT_MODEL}
