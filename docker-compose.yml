@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docwise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docwise}
+      POSTGRES_DB: ${POSTGRES_DB:-docwise}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docwise} -d ${POSTGRES_DB:-docwise}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-docwise}:${POSTGRES_PASSWORD:-docwise}@postgres:5432/${POSTGRES_DB:-docwise}
+      OPENAI_API_BASE: ${OPENAI_API_BASE}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHAT_MODEL: ${CHAT_MODEL}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      CHUNK_SIZE: ${CHUNK_SIZE}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      AZURE_REDIRECT_URI: ${AZURE_REDIRECT_URI}
+      FRONTEND_URL: ${FRONTEND_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+    volumes:
+      - backend_data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  postgres_data:
+  backend_data:

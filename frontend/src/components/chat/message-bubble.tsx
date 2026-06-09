@@ -65,7 +65,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           ) : (
             <div className="prose-message">
               {toolParts.map((p) => (
-                <ToolCall key={p.toolCallId} part={p} />
+                <ToolCall key={p.toolCallId} part={p as never} />
               ))}
               {text && <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>}
               {isStreaming && <span className="streaming-caret" aria-hidden />}
