@@ -36,8 +36,35 @@ export function buildDocumentTools(embeddings: EmbeddingsService) {
     execute: async ({ query, filenames }) => {
       const chunks = await embeddings.similaritySearch(query, { filenames })
       if (chunks.length === 0) return 'No matching documents found.'
+      // Surface link_url + chunk_index to the chat agent so it can render
+      // proper markdown citations. The display name preference is
+      // "<Code> v<Ver>" when present (sharepoint-list rows), else the
+      // raw filename (legacy uploads / sharepoint imports).
       return chunks
-        .map((c) => `--- From: ${c.metadata.filename} ---\n${c.content}`)
+        .map((c) => {
+          const m = c.metadata as Record<string, unknown>
+          const filename = m.filename as string | undefined
+          const code = m.code as string | undefined
+          const version = m.version as string | undefined
+          const title = m.title as string | undefined
+          const linkUrl = m.link_url as string | undefined
+          const chunkIndex = m.chunk_index as string | undefined
+
+          const display =
+            code && version ? `${code} v${version}` :
+            code ? code :
+            filename ?? 'Unknown document'
+
+          const lines: string[] = []
+          lines.push(`--- From: ${display}`)
+          if (title) lines.push(`Title: ${title}`)
+          if (filename && code) lines.push(`Filename: ${filename}`)
+          if (linkUrl) lines.push(`URL: ${linkUrl}`)
+          if (chunkIndex !== undefined) lines.push(`Section: chunk ${chunkIndex}`)
+          lines.push('---')
+          lines.push(c.content as string)
+          return lines.join('\n')
+        })
         .join('\n\n---\n\n')
     },
   })

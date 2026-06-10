@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { nanoid } from 'nanoid'
+import { embedMany } from 'ai'
+import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { ParsersService } from './parsers.service.js'
+import { PrismaService } from '../prisma/prisma.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import { splitText } from './text-splitter.js'
 import type { DocumentInfo, ImportResponse, SharePointFileRef } from '../common/types.js'
@@ -11,17 +15,43 @@ function getFileType(filename: string): string {
   return i >= 0 ? filename.slice(i + 1).toLowerCase() : 'unknown'
 }
 
+/** Outcome reported back to the watcher for counter bookkeeping. */
+export type SharepointUpsertOutcome =
+  | { kind: 'ingested'; chunkCount: number }   // new SP row, file ingested
+  | { kind: 'updated'; chunkCount: number }    // ver bumped or status changed → re-embedded
+  | { kind: 'skipped' }                        // same code+ver, already synced
+  | { kind: 'pending' }                        // metadata recorded, no file
+  | { kind: 'failed' }                         // metadata recorded with sync_error
+
+export interface SharepointUpsertArgs {
+  listId: string
+  code: string
+  version: string
+  title: string
+  sourceMetadata: Record<string, unknown>
+  /** Provide when the file was resolved + downloaded. Triggers re-embed if ver changed. */
+  file?: { buffer: Buffer; filename: string }
+  /** Reason status isn't 'synced' — recorded for ops. Ignored when `file` is provided. */
+  status?: 'pending_access' | 'failed_parse' | 'failed_resolve'
+  error?: string
+}
+
 /**
  * Orchestrates the upload / import / list / delete flows. Delegates parsing,
  * chunking, embedding, and SharePoint I/O to the other services.
  */
 export class DocumentsService {
+  private readonly openai: OpenAIProvider
+
   constructor(
     private readonly config: AppConfig,
     private readonly parsers: ParsersService,
     private readonly embeddings: EmbeddingsService,
     private readonly sharepoint: SharepointService,
-  ) {}
+    private readonly prisma: PrismaService,
+  ) {
+    this.openai = createOpenAI({ baseURL: config.openaiApiBase, apiKey: config.openaiApiKey })
+  }
 
   async uploadLocalFile(buffer: Buffer, filename: string): Promise<ImportResponse> {
     if (!this.parsers.isSupported(filename)) {
@@ -73,5 +103,170 @@ export class DocumentsService {
 
   async removeDocument(docId: string): Promise<void> {
     await this.embeddings.deleteDocument(docId)
+  }
+
+  // ── SharePoint-list watcher entry point ────────────────────────────
+
+  /**
+   * Atomic per-row upsert used by the list watcher. Handles four cases in
+   * one call so the watcher's main loop stays linear:
+   *
+   *   1. Same (list_id, code, version) already 'synced' → no-op, return 'skipped'.
+   *   2. File provided → re-embed: delete existing (if any) + insert resource +
+   *      insert N embedding rows, all in one $transaction.
+   *   3. No file + status='pending_access' → upsert resource metadata only.
+   *      Embeddings absent; ready for Phase B to fill in.
+   *   4. No file + status='failed_*' → upsert resource metadata with sync_error.
+   *
+   * Cases 3/4 still write a `resources` row so the inventory is complete
+   * regardless of access — see docs/sharepoint-list-watcher-plan.md §1.
+   */
+  async upsertFromSharepointList(args: SharepointUpsertArgs): Promise<SharepointUpsertOutcome> {
+    const now = new Date()
+    const existing = await this.prisma.resource.findUnique({
+      where: { sp_code_uk: { sharepointListId: args.listId, sharepointCode: args.code } },
+      select: { id: true, sharepointVersion: true, syncStatus: true },
+    })
+
+    // Case 1: nothing to do.
+    if (
+      existing &&
+      args.file &&
+      existing.sharepointVersion === args.version &&
+      existing.syncStatus === 'synced'
+    ) {
+      return { kind: 'skipped' }
+    }
+
+    // Cases 3/4: metadata-only upsert — no file, no embeddings.
+    if (!args.file) {
+      const status = args.status ?? 'pending_access'
+      if (
+        existing &&
+        existing.sharepointVersion === args.version &&
+        existing.syncStatus === status
+      ) {
+        // status & version unchanged; just bump last_sync_attempt
+        await this.prisma.resource.update({
+          where: { id: existing.id },
+          data: { lastSyncAttempt: now },
+        })
+        return { kind: 'skipped' }
+      }
+
+      if (existing) {
+        // Status/version changed (e.g. user lost access, or ver bumped but file
+        // not resolvable yet). Drop any embedding rows; switch resource to
+        // metadata-only state.
+        await this.prisma.$transaction([
+          this.prisma.embedding.deleteMany({ where: { resourceId: existing.id } }),
+          this.prisma.resource.update({
+            where: { id: existing.id },
+            data: {
+              sharepointVersion: args.version,
+              sourceMetadata: args.sourceMetadata as object,
+              syncStatus: status,
+              syncError: args.error ?? null,
+              lastSyncAttempt: now,
+            },
+          }),
+        ])
+      } else {
+        await this.prisma.resource.create({
+          data: {
+            id: nanoid(12),
+            filename: `${args.code} (pending)`,
+            fileType: 'unknown',
+            source: 'sharepoint-list',
+            sharepointListId: args.listId,
+            sharepointCode: args.code,
+            sharepointVersion: args.version,
+            sourceMetadata: args.sourceMetadata as object,
+            syncStatus: status,
+            syncError: args.error ?? null,
+            lastSyncAttempt: now,
+          },
+        })
+      }
+      return { kind: status === 'pending_access' ? 'pending' : 'failed' }
+    }
+
+    // Case 2: file provided. Parse → chunk → embed → atomic replace.
+    if (!this.parsers.isSupported(args.file.filename)) {
+      // Still record the row so it's not invisible — counts as failed_parse.
+      return this.upsertFromSharepointList({
+        ...args,
+        file: undefined,
+        status: 'failed_parse',
+        error: `Unsupported file type: ${args.file.filename}`,
+      })
+    }
+
+    const parsed = await this.parsers.parseBuffer(args.file.buffer, args.file.filename)
+    const chunks = splitText(
+      { ...parsed }.content,
+      {
+        ...parsed.metadata,
+        sharepoint_list_id: args.listId,
+        sharepoint_code: args.code,
+        sharepoint_version: args.version,
+      },
+      this.config.chunkSize,
+      this.config.chunkOverlap,
+    )
+
+    // Generate embeddings BEFORE opening the transaction so the tx is short.
+    const { embeddings: vectors } = await embedMany({
+      model: this.openai.textEmbeddingModel(this.config.embeddingModel),
+      values: chunks.map((c) => c.text),
+    })
+
+    const newResourceId = nanoid(12)
+    await this.prisma.$transaction(async (tx) => {
+      if (existing) {
+        // Delete the old row; FK cascade clears its embeddings.
+        await tx.resource.delete({ where: { id: existing.id } })
+      }
+      await tx.resource.create({
+        data: {
+          id: newResourceId,
+          filename: args.file!.filename,
+          fileType: getFileType(args.file!.filename),
+          source: 'sharepoint-list',
+          sharepointListId: args.listId,
+          sharepointCode: args.code,
+          sharepointVersion: args.version,
+          sourceMetadata: args.sourceMetadata as object,
+          syncStatus: 'synced',
+          syncError: null,
+          lastSyncAttempt: now,
+        },
+      })
+      // Bulk-insert embeddings — raw SQL because halfvec isn't a Prisma type.
+      for (let i = 0; i < chunks.length; i++) {
+        const id = nanoid()
+        const vec = JSON.stringify(vectors[i])
+        await tx.$executeRaw`
+          INSERT INTO embeddings (id, resource_id, content, embedding, metadata)
+          VALUES (${id}, ${newResourceId}, ${chunks[i].text}, ${vec}::halfvec, ${chunks[i].metadata}::jsonb)
+        `
+      }
+    })
+
+    return { kind: existing ? 'updated' : 'ingested', chunkCount: chunks.length }
+  }
+
+  /** Remove all SP-sourced resources whose `code` isn't in the given set. */
+  async removeStaleSharepointRows(listId: string, liveCodes: Set<string>): Promise<number> {
+    const live = Array.from(liveCodes)
+    // Build a list of all SP-sourced rows for this list, then delete the ones not in `live`.
+    const existing = await this.prisma.resource.findMany({
+      where: { sharepointListId: listId },
+      select: { id: true, sharepointCode: true },
+    })
+    const stale = existing.filter((r) => r.sharepointCode && !liveCodes.has(r.sharepointCode))
+    if (stale.length === 0) return 0
+    await this.prisma.resource.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } })
+    return stale.length
   }
 }

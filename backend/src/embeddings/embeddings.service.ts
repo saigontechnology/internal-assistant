@@ -113,12 +113,16 @@ export class EmbeddingsService {
         content: string
         metadata: Record<string, unknown> | null
         filename: string
+        sharepoint_url: string | null
+        source_metadata: Record<string, unknown> | null
         distance: number
       }
       const rows = await this.prisma.$queryRaw<Row[]>`
         SELECT e.content,
                e.metadata,
                r.filename,
+               r.sharepoint_url,
+               r.source_metadata,
                (e.embedding <=> ${vec}::halfvec)::float AS distance
         FROM embeddings e
         INNER JOIN resources r ON e.resource_id = r.id
@@ -137,10 +141,29 @@ export class EmbeddingsService {
         picked.push(r)
         if (picked.length >= k) break
       }
-      return picked.map((r) => ({
-        content: r.content,
-        metadata: { ...(r.metadata ?? {}), filename: r.filename },
-      }))
+      return picked.map((r) => {
+        const srcMd = r.source_metadata ?? {}
+        // "Open in browser" URL — DocIdRedir for sharepoint-list rows
+        // (in source_metadata.link_url), webUrl for manual imports
+        // (in resources.sharepoint_url). The agent uses this to build
+        // clickable citations.
+        const linkUrl =
+          (typeof srcMd.link_url === 'string' ? srcMd.link_url : undefined) ??
+          r.sharepoint_url ??
+          undefined
+        return {
+          content: r.content,
+          metadata: {
+            ...(r.metadata ?? {}),
+            filename: r.filename,
+            link_url: linkUrl,
+            // Hand the agent richer-than-filename context for display:
+            code: typeof srcMd.code === 'string' ? srcMd.code : undefined,
+            version: typeof srcMd.version === 'string' ? srcMd.version : undefined,
+            title: typeof srcMd.title === 'string' ? srcMd.title : undefined,
+          },
+        }
+      })
     } catch (err) {
       // Match legacy behavior: swallow + log so chat can still respond
       // without RAG context if the vector index is unavailable.
@@ -156,6 +179,11 @@ export class EmbeddingsService {
       file_type: string
       source: string
       sharepoint_url: string | null
+      sharepoint_code: string | null
+      sharepoint_version: string | null
+      sync_status: string
+      sync_error: string | null
+      source_metadata: Record<string, unknown> | null
       chunk_count: number
     }
     const rows = await this.prisma.$queryRaw<Row[]>`
@@ -164,19 +192,37 @@ export class EmbeddingsService {
              r.file_type,
              r.source,
              r.sharepoint_url,
+             r.sharepoint_code,
+             r.sharepoint_version,
+             r.sync_status,
+             r.sync_error,
+             r.source_metadata,
              COUNT(e.id)::int AS chunk_count
       FROM resources r
       LEFT JOIN embeddings e ON e.resource_id = r.id
       GROUP BY r.id
       ORDER BY r.created_at DESC
     `
-    return rows.map((r) => ({
-      id: r.id,
-      filename: r.filename,
-      fileType: r.file_type,
-      chunkCount: r.chunk_count,
-      source: r.source as 'upload' | 'sharepoint',
-      sharepointUrl: r.sharepoint_url ?? undefined,
-    }))
+    return rows.map((r) => {
+      const md = r.source_metadata ?? {}
+      const linkFromMetadata = typeof md.link_url === 'string' ? md.link_url : undefined
+      return {
+        id: r.id,
+        filename: r.filename,
+        fileType: r.file_type,
+        chunkCount: r.chunk_count,
+        source: r.source as DocumentInfo['source'],
+        sharepointUrl: r.sharepoint_url ?? undefined,
+        // sharepoint-list rows use the list's Link column; legacy
+        // sharepoint imports fall back to sharepointUrl.
+        linkUrl: linkFromMetadata ?? r.sharepoint_url ?? undefined,
+        sharepointCode: r.sharepoint_code ?? undefined,
+        sharepointVersion: r.sharepoint_version ?? undefined,
+        syncStatus: r.sync_status as DocumentInfo['syncStatus'],
+        syncError: r.sync_error ?? undefined,
+        title: typeof md.title === 'string' ? md.title : undefined,
+        distribution: typeof md.distribution === 'string' ? md.distribution : undefined,
+      }
+    })
   }
 }

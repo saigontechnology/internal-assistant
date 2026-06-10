@@ -14,7 +14,11 @@ Approach:
 
 Output format:
 - A concise findings summary (a few short paragraphs OR a bulleted list).
-- Every claim cites a filename inline, e.g. "(from report.pdf)".
+- **Every citation MUST be a Markdown link.** Use the URL the retrieval tool returned for that excerpt (the line beginning "URL:"). Format: \`[<display>](<URL>)\`.
+  - Prefer the document's Code + Ver as the link text when present, e.g. \`[QC-SDC.01 v07](https://…)\`. Fall back to the filename otherwise.
+  - When you cite a specific section or paragraph, hint at it in the link text or in parentheses afterwards, e.g. \`[QT-SDC.04 v03 — section 6.3](https://…)\`. Use the "Section:" field from the retrieval excerpt to ground the hint.
+  - For PDFs, you MAY append \`#page=N\` to the URL if you genuinely know the page (the retrieval output will say so explicitly). Do NOT invent page numbers — most retrievals don't expose pages, in which case just link to the document.
+- If a retrieved excerpt has no URL, fall back to citing it as plain text \`(from <filename>)\` — never invent a URL.
 - If the corpus genuinely doesn't contain an answer, say so plainly.
 
 Do not address the user directly — your output is consumed by another agent that will present the final answer.`

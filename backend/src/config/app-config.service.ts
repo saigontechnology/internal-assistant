@@ -41,6 +41,11 @@ export class AppConfig {
   get frontendUrl()    { return this.raw.getOrThrow('FRONTEND_URL') }
   get sessionSecret()  { return this.raw.getOrThrow('SESSION_SECRET') }
   get isProd()         { return this.raw.getOrThrow('NODE_ENV') === 'production' }
+
+  // ── SharePoint List watcher ──
+  get sharepointHostname() { return this.raw.getOrThrow('SHAREPOINT_TENANT_HOSTNAME') }
+  get sharepointSitePath() { return this.raw.getOrThrow('SHAREPOINT_SITE_PATH') }
+  get sharepointListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
 }
 
 /**

@@ -105,7 +105,7 @@ function ActiveChat({
             type="submit"
             size="icon-sm"
             disabled={isActive || !input.trim()}
-            className="absolute right-2 bottom-2 size-8 rounded-[0.4rem]"
+            className="absolute top-1/2 right-2 size-8 -translate-y-1/2 rounded-[0.4rem]"
           >
             <ArrowUp />
           </Button>

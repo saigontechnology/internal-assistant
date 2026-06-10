@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { AppConfig } from '../config/app-config.service.js'
 import { EmbeddingsModule } from '../embeddings/embeddings.module.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
+import { PrismaService } from '../prisma/prisma.service.js'
 import { SharepointModule } from '../sharepoint/sharepoint.module.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import { DocumentsController } from './documents.controller.js'
@@ -15,9 +16,14 @@ import { ParsersService } from './parsers.service.js'
     { provide: ParsersService, useFactory: () => new ParsersService() },
     {
       provide: DocumentsService,
-      inject: [AppConfig, ParsersService, EmbeddingsService, SharepointService],
-      useFactory: (c: AppConfig, p: ParsersService, e: EmbeddingsService, s: SharepointService) =>
-        new DocumentsService(c, p, e, s),
+      inject: [AppConfig, ParsersService, EmbeddingsService, SharepointService, PrismaService],
+      useFactory: (
+        c: AppConfig,
+        p: ParsersService,
+        e: EmbeddingsService,
+        s: SharepointService,
+        db: PrismaService,
+      ) => new DocumentsService(c, p, e, s, db),
     },
   ],
   exports: [DocumentsService, ParsersService],

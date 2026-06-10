@@ -8,8 +8,24 @@ export interface DocumentInfo {
   filename: string
   fileType: string
   chunkCount: number
-  source: 'sharepoint' | 'upload'
+  source: 'sharepoint' | 'upload' | 'sharepoint-list'
   sharepointUrl?: string
+  /**
+   * "Open in browser" URL. For sharepoint-list rows this is the original
+   * `Link` column value (a DocIdRedir.aspx URL — SharePoint resolves it to
+   * the real file using the browser's session cookies). For manually-imported
+   * sharepoint rows it's the file's webUrl. Absent for local uploads.
+   */
+  linkUrl?: string
+  /** Only set for sharepoint-list rows. 'synced' for legacy upload/import rows. */
+  syncStatus?: 'synced' | 'pending_access' | 'failed_parse' | 'failed_resolve'
+  syncError?: string
+  /** Source list row identity (sharepoint-list only). */
+  sharepointCode?: string
+  sharepointVersion?: string
+  /** Title / Distribution from the source list — handy for display. */
+  title?: string
+  distribution?: string
 }
 
 export interface DocumentListResponse {

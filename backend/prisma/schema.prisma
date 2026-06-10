@@ -29,7 +29,37 @@ model Resource {
   updatedAt     DateTime    @default(now()) @map("updated_at") @db.Timestamp(6)
   embeddings    Embedding[]
 
+  // SharePoint List watcher fields (added in migration 0002_watcher).
+  // (sharepointListId, sharepointCode) is the stable identity for SP-sourced rows.
+  // syncStatus tracks whether the file was actually ingested (`synced`) vs.
+  // metadata-only (`pending_access` etc.) — see docs/sharepoint-list-watcher-plan.md §5.
+  sharepointListId  String?   @map("sharepoint_list_id")
+  sharepointCode    String?   @map("sharepoint_code")
+  sharepointVersion String?   @map("sharepoint_version")
+  sourceMetadata    Json?     @map("source_metadata")
+  syncStatus        String    @default("synced") @map("sync_status")
+  syncError         String?   @map("sync_error")
+  lastSyncAttempt   DateTime? @map("last_sync_attempt") @db.Timestamp(6)
+
+  @@unique([sharepointListId, sharepointCode], name: "sp_code_uk", map: "resources_sp_code_uk")
+  @@index([syncStatus], map: "resources_sync_status_idx")
   @@map("resources")
+}
+
+model WatcherState {
+  listId        String    @id @map("list_id")
+  lastRunAt     DateTime? @map("last_run_at") @db.Timestamp(6)
+  lastStatus    String    @default("pending") @map("last_status")
+  lastError     String?   @map("last_error")
+  itemsSeen     Int       @default(0) @map("items_seen")
+  itemsIngested Int       @default(0) @map("items_ingested")
+  itemsUpdated  Int       @default(0) @map("items_updated")
+  itemsSkipped  Int       @default(0) @map("items_skipped")
+  itemsPending  Int       @default(0) @map("items_pending")
+  itemsRemoved  Int       @default(0) @map("items_removed")
+  itemsFailed   Int       @default(0) @map("items_failed")
+
+  @@map("watcher_state")
 }
 
 model Embedding {

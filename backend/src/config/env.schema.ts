@@ -27,6 +27,11 @@ export const envSchema = z.object({
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   SESSION_SECRET: z.string().min(1).default('dev-insecure-secret-change-me'),
   NODE_ENV: z.enum(['development', 'production']).default('development'),
+
+  // SharePoint List watcher (Phase A). Resolved at sync time and cached in-process.
+  SHAREPOINT_TENANT_HOSTNAME: z.string().min(1).default('saigontechnology0.sharepoint.com'),
+  SHAREPOINT_SITE_PATH: z.string().min(1).default('/SDC/ISOSDC'),
+  SHAREPOINT_LIST_NAME: z.string().min(1).default('Danh mục total SDC'),
 })
 
 export type Env = z.infer<typeof envSchema>
