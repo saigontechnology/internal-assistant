@@ -1,8 +1,9 @@
 import { embed, embedMany } from 'ai'
-import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
+import { type OpenAIProvider } from '@ai-sdk/openai'
 import { nanoid } from 'nanoid'
 import { Prisma } from '@prisma/client'
 import { AppConfig } from '../config/app-config.service.js'
+import { buildOpenAIClient } from '../config/openai-client.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import type { DocumentInfo, TextChunk } from '../common/types.js'
 
@@ -38,10 +39,7 @@ export class EmbeddingsService {
     private readonly config: AppConfig,
     private readonly prisma: PrismaService,
   ) {
-    this.openai = createOpenAI({
-      baseURL: this.config.openaiApiBase,
-      apiKey: this.config.openaiApiKey,
-    })
+    this.openai = buildOpenAIClient(this.config)
   }
 
   private async generateEmbedding(text: string): Promise<number[]> {

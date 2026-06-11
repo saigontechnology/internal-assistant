@@ -8,8 +8,9 @@ import {
   type UIMessage,
 } from 'ai'
 import { z } from 'zod'
-import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
+import { type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
+import { buildOpenAIClient } from '../config/openai-client.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { ResearchAgentService } from './research-agent.service.js'
 import { buildDocumentTools } from '../documents/document-tools.js'
@@ -42,10 +43,7 @@ export class ChatService {
     private readonly embeddings: EmbeddingsService,
     private readonly research: ResearchAgentService,
   ) {
-    this.openai = createOpenAI({
-      baseURL: this.config.openaiApiBase,
-      apiKey: this.config.openaiApiKey,
-    })
+    this.openai = buildOpenAIClient(this.config)
   }
 
   private buildTools() {

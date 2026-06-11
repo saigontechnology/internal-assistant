@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { embedMany } from 'ai'
-import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
+import { type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
+import { buildOpenAIClient } from '../config/openai-client.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { ParsersService } from './parsers.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -50,7 +51,7 @@ export class DocumentsService {
     private readonly sharepoint: SharepointService,
     private readonly prisma: PrismaService,
   ) {
-    this.openai = createOpenAI({ baseURL: config.openaiApiBase, apiKey: config.openaiApiKey })
+    this.openai = buildOpenAIClient(config)
   }
 
   async uploadLocalFile(buffer: Buffer, filename: string): Promise<ImportResponse> {
