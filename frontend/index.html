@@ -6,17 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Internal Assistant</title>
     <script>
-      // Apply the stored/system theme before paint to avoid a flash.
+      // Apply the stored theme before paint to avoid a flash. Defaults to light.
       (function () {
         try {
           var stored =
             localStorage.getItem("internal-assistant:theme") ||
             localStorage.getItem("docwise:theme")
-          var isDark =
-            stored === "dark" ||
-            ((stored === "system" || !stored) &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches)
-          document.documentElement.classList.toggle("dark", isDark)
+          document.documentElement.classList.toggle("dark", stored === "dark")
         } catch (e) {}
       })()
     </script>

@@ -11,7 +11,7 @@ import {
 const STORAGE_KEY = "internal-assistant:theme"
 const LEGACY_STORAGE_KEY = "docwise:theme"
 
-export type Theme = "light" | "dark" | "system"
+export type Theme = "light" | "dark"
 
 interface ThemeContextValue {
   theme: Theme
@@ -23,7 +23,6 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 function readStoredTheme(): Theme {
   try {
     let raw = localStorage.getItem(STORAGE_KEY)
-    // One-time migration from the legacy "docwise:theme" key.
     if (raw === null) {
       const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
       if (legacy !== null) {
@@ -32,19 +31,16 @@ function readStoredTheme(): Theme {
         raw = legacy
       }
     }
-    if (raw === "light" || raw === "dark" || raw === "system") return raw
+    if (raw === "dark") return "dark"
+    if (raw === "light") return "light"
   } catch {
     // ignore storage access errors
   }
-  return "system"
+  return "light"
 }
 
 function applyTheme(theme: Theme) {
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches)
-  document.documentElement.classList.toggle("dark", isDark)
+  document.documentElement.classList.toggle("dark", theme === "dark")
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -59,18 +55,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Apply the resolved theme whenever it changes.
   useEffect(() => {
     applyTheme(theme)
-  }, [theme])
-
-  // While in "system" mode, follow live OS preference changes.
-  useEffect(() => {
-    if (theme !== "system") return
-    const media = window.matchMedia("(prefers-color-scheme: dark)")
-    const onChange = () => applyTheme("system")
-    media.addEventListener("change", onChange)
-    return () => media.removeEventListener("change", onChange)
   }, [theme])
 
   const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])

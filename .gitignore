@@ -19,3 +19,4 @@ backend/data/vectordb/*
 # Claude
 .claude/
 .agents/
+.understand-anything/

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { ThemeToggle } from "@/components/layout/theme-toggle"
-import { useAuth } from "@/lib/auth"
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { useAuth } from "@/lib/auth";
+import logoUrl from "@/assets/logo.svg";
 
 function MicrosoftLogo({ className }: { className?: string }) {
   return (
@@ -11,26 +12,26 @@ function MicrosoftLogo({ className }: { className?: string }) {
       <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
       <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
     </svg>
-  )
+  );
 }
 
 export function LoginPage() {
-  const { login } = useAuth()
-  const [error, setError] = useState<string | null>(null)
+  const { login } = useAuth();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(window.location.search);
     if (params.get("auth") === "error") {
-      setError("Sign-in failed. Please try again.")
-      params.delete("auth")
-      const qs = params.toString()
+      setError("Sign-in failed. Please try again.");
+      params.delete("auth");
+      const qs = params.toString();
       window.history.replaceState(
         {},
         "",
-        window.location.pathname + (qs ? `?${qs}` : "")
-      )
+        window.location.pathname + (qs ? `?${qs}` : ""),
+      );
     }
-  }, [])
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -43,10 +44,12 @@ export function LoginPage() {
       <main className="flex flex-1 items-center justify-center px-6">
         <div className="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
           <div className="flex flex-col items-center text-center">
-            <div className="flex size-12 items-center justify-center rounded-[0.5rem] bg-primary font-display text-lg font-semibold text-primary-foreground shadow-sm">
-              IA
-            </div>
-            <h1 className="mt-4 font-display text-2xl font-semibold tracking-tight">
+            <img
+              src={logoUrl}
+              alt="Internal Assistant"
+              className="h-8 w-auto shrink-0"
+            />
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight">
               Internal Assistant
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -73,5 +76,5 @@ export function LoginPage() {
         </div>
       </main>
     </div>
-  )
+  );
 }

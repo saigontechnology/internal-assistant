@@ -37,7 +37,7 @@ export function DocumentList({
 }: DocumentListProps) {
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-2">
+      <div className="dark flex flex-col gap-2 text-sidebar-foreground">
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-12 w-full" />
         ))}
@@ -47,7 +47,7 @@ export function DocumentList({
 
   if (documents.length === 0) {
     return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
+      <div className="dark py-6 text-center text-sm text-muted-foreground">
         No documents indexed yet.
       </div>
     );
@@ -55,7 +55,7 @@ export function DocumentList({
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex flex-col gap-1.5">
+      <div className="dark flex flex-col gap-1.5 text-foreground">
         {documents.map((doc) => {
           const isSpListRow = doc.source === "sharepoint-list";
           const status = doc.syncStatus ?? "synced";

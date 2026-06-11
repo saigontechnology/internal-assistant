@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tooltip"
 import { BookOpen, MessageSquarePlus, Trash2, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
+import logoUrlWhite from "@/assets/logo_white.svg"
 
 type SidebarTab = "chats" | "documents"
 
@@ -79,8 +80,8 @@ function ConversationList() {
               className={cn(
                 "group relative flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
                 isActive
-                  ? "bg-primary/5 text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  ? "bg-sidebar-accent text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
               )}
             >
               {isActive && (
@@ -93,7 +94,7 @@ function ConversationList() {
                 )}
               />
               <span className="flex-1 truncate">{conv.title}</span>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
+              <span className="shrink-0 text-[10px] text-sidebar-foreground/50">
                 {timeAgo(conv.updatedAt)}
               </span>
               <button
@@ -145,50 +146,67 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-full border-r border-border bg-card">
-      <TooltipProvider>
-        <nav className="flex w-12 flex-col items-center gap-1 border-r border-border py-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setActiveTab("chats")}
-                className={cn(
-                  "flex size-9 items-center justify-center rounded-lg transition-colors",
-                  activeTab === "chats"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                )}
-              >
-                <MessageSquare className="size-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Chats</TooltipContent>
-          </Tooltip>
+    <aside className="flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-4">
+        <img
+          src={logoUrlWhite}
+          alt="Internal Assistant"
+          className="h-8 w-auto shrink-0"
+        />
+        <div className="flex flex-col leading-tight">
+          <span className="text-sm font-bold tracking-wide">
+            INTERNAL ASSISTANT
+          </span>
+          <span className="text-[10px] font-medium tracking-[0.15em] text-sidebar-foreground/60 uppercase">
+            Document Room
+          </span>
+        </div>
+      </div>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setActiveTab("documents")}
-                className={cn(
-                  "flex size-9 items-center justify-center rounded-lg transition-colors",
-                  activeTab === "documents"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                )}
-              >
-                <BookOpen className="size-5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Documents</TooltipContent>
-          </Tooltip>
-        </nav>
-      </TooltipProvider>
+      <div className="flex flex-1 overflow-hidden">
+        <TooltipProvider>
+          <nav className="flex w-12 flex-col items-center gap-1 border-r border-sidebar-border py-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setActiveTab("chats")}
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-lg transition-colors",
+                    activeTab === "chats"
+                      ? "bg-sidebar-primary/20 text-sidebar-primary"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  )}
+                >
+                  <MessageSquare className="size-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Chats</TooltipContent>
+            </Tooltip>
 
-      <div className="flex w-72 flex-col">
-        {activeTab === "chats" ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setActiveTab("documents")}
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-lg transition-colors",
+                    activeTab === "documents"
+                      ? "bg-sidebar-primary/20 text-sidebar-primary"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  )}
+                >
+                  <BookOpen className="size-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Documents</TooltipContent>
+            </Tooltip>
+          </nav>
+        </TooltipProvider>
+
+        <div className="flex w-72 flex-col">
+          {activeTab === "chats" ? (
           <>
             <div className="flex items-center gap-2 px-4 py-4">
-              <h2 className="label-eyebrow text-muted-foreground">Chats</h2>
+              <h2 className="label-eyebrow text-sidebar-foreground/60">Chats</h2>
             </div>
             <Separator />
             <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -198,8 +216,8 @@ export function Sidebar() {
         ) : (
           <>
             <div className="flex items-center gap-2 px-4 py-4">
-              <h2 className="label-eyebrow text-muted-foreground">Documents</h2>
-              <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
+              <h2 className="label-eyebrow text-sidebar-foreground/60">Documents</h2>
+              <span className="ml-auto font-mono text-xs tabular-nums text-sidebar-foreground/50">
                 {String(documents.length).padStart(2, "0")} file
                 {documents.length !== 1 ? "s" : ""}
               </span>
@@ -221,6 +239,7 @@ export function Sidebar() {
             </div>
           </>
         )}
+        </div>
       </div>
     </aside>
   )

@@ -43,7 +43,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           "flex size-8 shrink-0 items-center justify-center rounded-[0.4rem] border text-sm shadow-sm",
           isUser
             ? "border-transparent bg-foreground text-background"
-            : "border-primary/30 bg-primary/10 font-display font-semibold text-primary"
+            : "border-primary/30 bg-primary/10 font-semibold text-primary"
         )}
       >
         {isUser ? <User className="size-4" /> : "A"}
