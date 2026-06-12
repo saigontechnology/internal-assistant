@@ -1,84 +1,91 @@
-import { useState, useEffect, useRef, type KeyboardEvent } from "react"
-import { useChat } from "@ai-sdk/react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { MessageList } from "./message-list"
-import { ArrowUp } from "lucide-react"
-import { useConversations } from "@/lib/conversations"
-import type { UIMessage } from "ai"
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { MessageList } from "./message-list";
+import { ArrowUp, Pause } from "lucide-react";
+import { useConversations } from "@/lib/conversations";
 
 function ActiveChat({
   conversationId,
   initialMessages,
 }: {
-  conversationId: string
-  initialMessages: UIMessage[]
+  conversationId: string;
+  initialMessages: UIMessage[];
 }) {
-  const [input, setInput] = useState("")
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { saveMessages } = useConversations()
+  const [input, setInput] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { saveMessages } = useConversations();
 
-  const { messages, sendMessage, setMessages, status, error } = useChat({
+  // Transport sends ONLY the latest user message + chat id to the backend.
+  // The server loads the prior turns from `chat_histories` by id and appends
+  // before calling streamText. Memoized so it isn't reconstructed on every
+  // render (which would otherwise tear down the open SSE connection).
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        prepareSendMessagesRequest({ messages, id }) {
+          return { body: { id, message: messages[messages.length - 1] } };
+        },
+      }),
+    [],
+  );
+
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     id: conversationId,
     messages: initialMessages,
+    transport,
     onFinish: () => {
-      saveRef.current?.()
+      saveRef.current?.();
     },
-  })
+  });
 
-  const saveRef = useRef<(() => void) | undefined>(undefined)
+  const saveRef = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     saveRef.current = () => {
-      saveMessages(conversationId, messages)
-    }
-  })
+      saveMessages(conversationId, messages);
+    };
+  });
 
   useEffect(() => {
     if (initialMessages.length > 0 && messages.length === 0) {
-      setMessages(initialMessages)
+      setMessages(initialMessages);
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`
-  }, [input])
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, [input]);
 
-  const isActive = status === "submitted" || status === "streaming"
+  const isActive = status === "submitted" || status === "streaming";
 
   const submit = () => {
-    const text = input.trim()
-    if (!text || isActive) return
-    setInput("")
-    sendMessage({ text })
-  }
+    const text = input.trim();
+    if (!text || isActive) return;
+    setInput("");
+    sendMessage({ text });
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    submit()
-  }
+    e.preventDefault();
+    submit();
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      submit()
+      e.preventDefault();
+      submit();
     }
-  }
-
-  const fillAndFocus = (text: string) => {
-    setInput(text)
-    requestAnimationFrame(() => textareaRef.current?.focus())
-  }
+  };
 
   return (
     <div className="flex h-full flex-col">
-      <MessageList
-        messages={messages}
-        status={status}
-        onSuggestionClick={fillAndFocus}
-      />
+      <MessageList messages={messages} status={status} />
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-6">
         {error && (
@@ -99,36 +106,50 @@ function ActiveChat({
             placeholder="Ask anything of your documents…"
             disabled={isActive}
             rows={1}
-            className="min-h-[3.25rem] max-h-48 resize-none rounded-xl border-0 bg-transparent px-4 pt-3.5 pr-12 pb-3.5 text-base leading-relaxed shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-sm"
+            className="min-h-[3.25rem] max-h-48 resize-none rounded-xl border-0 bg-transparent px-4 pt-4.5 pr-12 pb-3.5 text-base leading-relaxed shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-sm"
           />
           <Button
-            type="submit"
+            // While streaming, the button stops the run instead of submitting.
+            // `type="button"` (not "submit") to keep Enter / form-submit from
+            // accidentally aborting the live stream.
+            type={isActive ? "button" : "submit"}
             size="icon-sm"
-            disabled={isActive || !input.trim()}
+            // Enabled while streaming (so the user can stop), and otherwise
+            // only when they've typed something.
+            disabled={!isActive && !input.trim()}
+            onClick={isActive ? () => stop() : undefined}
+            aria-label={isActive ? "Stop generating" : "Send"}
             className="absolute top-1/2 right-2 size-8 -translate-y-1/2 rounded-[0.4rem]"
           >
-            <ArrowUp />
+            {isActive ? <Pause /> : <ArrowUp />}
           </Button>
         </form>
 
         <p className="mt-2.5 text-center text-xs text-muted-foreground">
-          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">Enter</kbd> to send
+          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
+            Enter
+          </kbd>{" "}
+          to send
           <span className="mx-1.5 text-border">·</span>
-          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">Shift+Enter</kbd> for newline
+          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
+            Shift+Enter
+          </kbd>{" "}
+          for newline
         </p>
       </div>
     </div>
-  )
+  );
 }
 
 export function ChatPanel() {
-  const { activeId, activeConversation, createConversation } = useConversations()
+  const { activeId, activeConversation, createConversation } =
+    useConversations();
 
   useEffect(() => {
-    if (!activeId) createConversation()
-  }, [activeId, createConversation])
+    if (!activeId) createConversation();
+  }, [activeId, createConversation]);
 
-  if (!activeId) return null
+  if (!activeId) return null;
 
   return (
     <ActiveChat
@@ -136,5 +157,5 @@ export function ChatPanel() {
       conversationId={activeId}
       initialMessages={activeConversation?.messages ?? []}
     />
-  )
+  );
 }

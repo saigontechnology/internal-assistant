@@ -75,14 +75,32 @@ export class ChatService {
     return { listDocuments: listDocumentsTool, research: researchTool }
   }
 
-  async streamChat(messages: UIMessage[]): Promise<StreamTextResult<ReturnType<typeof this.buildTools>, never>> {
+  /**
+   * Stream a reply against the full message history. Returns both the
+   * streamText result AND the (unchanged) message array so the caller can
+   * pass it as `originalMessages` to the response pipe — that's what tells
+   * the SDK which messages already exist on the client and which to
+   * generate IDs for in the assistant turn.
+   *
+   * No `validateUIMessages` call here: the previous messages come from our
+   * own DB (trusted by construction) and the single new message is a plain
+   * user text part with no tool data to validate.
+   */
+  async streamReply(messages: UIMessage[]): Promise<{
+    // Use `any` for the tool generic so TS doesn't need to resolve `typeof this`
+    // in a return-type position (which errors with `strictThis`). The concrete
+    // tool set is still constructed below; only the surface type is broadened.
+    result: StreamTextResult<any, never>
+    originalMessages: UIMessage[]
+  }> {
     const modelMessages = await convertToModelMessages(messages)
-    return streamText({
+    const result = streamText({
       model: this.openai.chat(this.config.chatModel),
       system: SYSTEM_PROMPT,
       messages: modelMessages,
       tools: this.buildTools(),
       stopWhen: stepCountIs(4),
     })
+    return { result, originalMessages: messages }
   }
 }

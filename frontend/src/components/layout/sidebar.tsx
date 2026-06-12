@@ -223,20 +223,21 @@ export function Sidebar() {
               </span>
             </div>
             <Separator />
-            {/* SyncPanel stays pinned at the top; only the document list
-                scrolls below it. Two stacked regions inside the flex column:
-                the top one is `shrink-0`, the bottom one owns the scrollbar. */}
+            {/* Three stacked regions:
+                  - SyncPanel (shrink-0, no scroll)
+                  - filter bar inside DocumentList (shrink-0, no scroll)
+                  - document list inside DocumentList (flex-1, owns scrollbar)
+                DocumentList manages the lower two so the filter bar and
+                the scroll zone never overlap. */}
             <div className="shrink-0 p-4 pb-3">
               <SyncPanel onSyncComplete={loadDocuments} />
             </div>
             <Separator />
-            <div className="flex-1 overflow-y-auto p-4">
-              <DocumentList
-                documents={documents}
-                isLoading={isLoading}
-                onDelete={handleDelete}
-              />
-            </div>
+            <DocumentList
+              documents={documents}
+              isLoading={isLoading}
+              onDelete={handleDelete}
+            />
           </>
         )}
         </div>

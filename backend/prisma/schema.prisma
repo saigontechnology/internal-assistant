@@ -46,6 +46,18 @@ model Resource {
   @@map("resources")
 }
 
+model ChatHistory {
+  id        String   @id
+  // Stored as a JSON array of UIMessage. Validated against the AI SDK's
+  // validateUIMessages on every load to make sure tool parts still match
+  // the current tool set.
+  messages  Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("chat_histories")
+}
+
 model WatcherState {
   listId        String    @id @map("list_id")
   lastRunAt     DateTime? @map("last_run_at") @db.Timestamp(6)
