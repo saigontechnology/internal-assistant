@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,33 +31,129 @@ const STATUS_LABEL: Record<SyncStatus, string> = {
   failed_resolve: "Not found",
 };
 
+type FilterKey = "all" | "synced" | "pending" | "failed";
+
+// Display order when no filter is active. The numeric weight is also the
+// secondary sort key for the "All" view so users see the most useful rows
+// (searchable ones) first.
+const STATUS_WEIGHT: Record<SyncStatus, number> = {
+  synced: 0,
+  pending_access: 1,
+  failed_parse: 2,
+  failed_resolve: 2,
+};
+
+function classify(status: SyncStatus): Exclude<FilterKey, "all"> {
+  if (status === "synced") return "synced";
+  if (status === "pending_access") return "pending";
+  return "failed";
+}
+
 export function DocumentList({
   documents,
   isLoading,
   onDelete,
 }: DocumentListProps) {
+  const [filter, setFilter] = useState<FilterKey>("all");
+
+  // One pass over the input: build per-bucket counts, then derive the
+  // filtered/sorted view. useMemo keeps it cheap for 375+ rows.
+  const { counts, visible } = useMemo(() => {
+    const counts = { all: documents.length, synced: 0, pending: 0, failed: 0 };
+    for (const d of documents) {
+      counts[classify(d.syncStatus ?? "synced")]++;
+    }
+    let visible = documents;
+    if (filter === "all") {
+      // Stable sort by status weight (synced → pending → failed) so the
+      // most useful rows surface first.
+      visible = [...documents].sort(
+        (a, b) =>
+          STATUS_WEIGHT[a.syncStatus ?? "synced"] -
+          STATUS_WEIGHT[b.syncStatus ?? "synced"],
+      );
+    } else {
+      visible = documents.filter(
+        (d) => classify(d.syncStatus ?? "synced") === filter,
+      );
+    }
+    return { counts, visible };
+  }, [documents, filter]);
+
+  // Filter bar — always rendered, sits OUTSIDE the scroll region. `shrink-0`
+  // keeps it from squishing as the list grows.
+  const filterBar = (
+    <div className="shrink-0 border-b border-border px-4 py-2.5">
+      <div className="flex flex-wrap gap-1">
+        <FilterButton
+          label="All"
+          count={counts.all}
+          active={filter === "all"}
+          onClick={() => setFilter("all")}
+        />
+        <FilterButton
+          label="Synced"
+          count={counts.synced}
+          tone="ok"
+          active={filter === "synced"}
+          onClick={() => setFilter("synced")}
+        />
+        <FilterButton
+          label="Pending"
+          count={counts.pending}
+          tone="muted"
+          active={filter === "pending"}
+          onClick={() => setFilter("pending")}
+        />
+        <FilterButton
+          label="Failed"
+          count={counts.failed}
+          tone="error"
+          active={filter === "failed"}
+          onClick={() => setFilter("failed")}
+        />
+      </div>
+    </div>
+  );
+
+  // Loading / empty / list states share the same two-section layout: filter
+  // bar on top (shrink-0), scrollable body below (flex-1 overflow-y-auto).
+  // The two never overlap.
   if (isLoading) {
     return (
-      <div className="dark flex flex-col gap-2 text-sidebar-foreground">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
+      <div className="dark flex min-h-0 flex-1 flex-col text-sidebar-foreground">
+        {filterBar}
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (documents.length === 0) {
     return (
-      <div className="dark py-6 text-center text-sm text-muted-foreground">
-        No documents indexed yet.
+      <div className="dark flex min-h-0 flex-1 flex-col text-sidebar-foreground">
+        {filterBar}
+        <div className="flex-1 overflow-y-auto py-6 text-center text-sm text-muted-foreground">
+          No documents indexed yet.
+        </div>
       </div>
     );
   }
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="dark flex flex-col gap-1.5 text-foreground">
-        {documents.map((doc) => {
+      <div className="dark flex min-h-0 flex-1 flex-col text-foreground">
+        {filterBar}
+        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-4">
+        {visible.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No {filter} documents.
+          </p>
+        )}
+        {visible.map((doc) => {
           const isSpListRow = doc.source === "sharepoint-list";
           const status = doc.syncStatus ?? "synced";
           const isSearchable = status === "synced";
@@ -189,7 +286,52 @@ export function DocumentList({
             </div>
           );
         })}
+        </div>
       </div>
     </TooltipProvider>
+  );
+}
+
+function FilterButton({
+  label,
+  count,
+  active,
+  tone,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  tone?: "ok" | "muted" | "error";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-primary/40 bg-primary/10 text-foreground"
+          : "border-border bg-card/40 text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+      )}
+    >
+      {label}
+      <span
+        className={cn(
+          "rounded px-1 font-mono text-[10px] tabular-nums",
+          active
+            ? "bg-primary/15 text-foreground"
+            : tone === "ok"
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : tone === "error"
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground",
+        )}
+      >
+        {count}
+      </span>
+    </button>
   );
 }

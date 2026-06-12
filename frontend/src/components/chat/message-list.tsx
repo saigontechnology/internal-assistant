@@ -1,27 +1,20 @@
-import { useEffect, useRef } from "react"
-import type { UIMessage, ChatStatus } from "ai"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { MessageBubble } from "./message-bubble"
+import { useEffect, useRef } from "react";
+import type { UIMessage, ChatStatus } from "ai";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { MessageBubble } from "./message-bubble";
 
 interface MessageListProps {
-  messages: UIMessage[]
-  status: ChatStatus
-  onSuggestionClick?: (text: string) => void
+  messages: UIMessage[];
+  status: ChatStatus;
+  onSuggestionClick?: (text: string) => void;
 }
 
-const SUGGESTIONS = [
-  "Summarize my most recent upload",
-  "Surface the key themes across my library",
-  "Compare what my documents say on a topic",
-  "Find the passage I half-remember",
-]
-
-export function MessageList({ messages, status, onSuggestionClick }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
+export function MessageList({ messages, status }: MessageListProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   if (messages.length === 0) {
     return (
@@ -41,45 +34,20 @@ export function MessageList({ messages, status, onSuggestionClick }: MessageList
             Ask anything of your documents — summaries, comparisons, the exact
             passage you half-remember. Start with a prompt below.
           </p>
-
-          <ul className="mt-10 border-t border-border">
-            {SUGGESTIONS.map((s, i) => (
-              <li key={s}>
-                <button
-                  type="button"
-                  onClick={() => onSuggestionClick?.(s)}
-                  className="group flex w-full items-baseline gap-4 border-b border-border py-3.5 text-left transition-colors hover:bg-accent/40"
-                >
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground/70 transition-colors group-hover:text-primary">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="flex-1 text-[0.95rem] text-muted-foreground transition-colors group-hover:text-foreground">
-                    {s}
-                  </span>
-                  <span
-                    aria-hidden
-                    className="translate-x-0 text-muted-foreground/50 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:text-primary group-hover:opacity-100"
-                  >
-                    →
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
-    )
+    );
   }
 
-  const isWaiting = status === "submitted"
-  const isStreaming = status === "streaming"
+  const isWaiting = status === "submitted";
+  const isStreaming = status === "streaming";
   const lastAssistantIdx = (() => {
-    if (!isStreaming) return -1
+    if (!isStreaming) return -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") return i
+      if (messages[i].role === "assistant") return i;
     }
-    return -1
-  })()
+    return -1;
+  })();
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -111,5 +79,5 @@ export function MessageList({ messages, status, onSuggestionClick }: MessageList
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
-  )
+  );
 }

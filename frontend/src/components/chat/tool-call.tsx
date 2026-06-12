@@ -1,6 +1,5 @@
 import { useState } from "react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { Markdown } from "./markdown"
 import {
   AlertCircle,
   ChevronDown,
@@ -142,7 +141,7 @@ function SubagentBody({ message }: { message: NestedMessage }) {
       )}
       {finalText && (
         <div className="prose-message max-h-[28rem] overflow-auto text-xs">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{finalText}</ReactMarkdown>
+          <Markdown>{finalText}</Markdown>
         </div>
       )}
     </div>
@@ -229,9 +228,7 @@ export function ToolCall({ part }: ToolCallProps) {
           <SubagentBody message={part.output as NestedMessage} />
         ) : view.outputFormat === "markdown" ? (
           <div className="prose-message max-h-[28rem] overflow-auto border-t border-border bg-muted/40 px-4 py-3 text-xs">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {part.output as string}
-            </ReactMarkdown>
+            <Markdown>{part.output as string}</Markdown>
           </div>
         ) : (
           <pre className="max-h-72 overflow-auto border-t border-border bg-muted/40 px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">

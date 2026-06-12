@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common'
 import { AppConfig } from '../config/app-config.service.js'
 import { EmbeddingsModule } from '../embeddings/embeddings.module.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
+import { PrismaService } from '../prisma/prisma.service.js'
+import { ChatHistoryService } from './chat-history.service.js'
 import { ChatController } from './chat.controller.js'
 import { ChatService } from './chat.service.js'
 import { ResearchAgentService } from './research-agent.service.js'
@@ -21,7 +23,12 @@ import { ResearchAgentService } from './research-agent.service.js'
       useFactory: (c: AppConfig, e: EmbeddingsService, r: ResearchAgentService) =>
         new ChatService(c, e, r),
     },
+    {
+      provide: ChatHistoryService,
+      inject: [PrismaService],
+      useFactory: (p: PrismaService) => new ChatHistoryService(p),
+    },
   ],
-  exports: [ChatService, ResearchAgentService],
+  exports: [ChatService, ResearchAgentService, ChatHistoryService],
 })
 export class ChatModule {}

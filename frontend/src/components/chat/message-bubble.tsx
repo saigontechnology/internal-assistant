@@ -1,8 +1,7 @@
 import type { UIMessage } from "ai"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
 import { User } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Markdown } from "./markdown"
 import { ToolCall } from "./tool-call"
 
 interface MessageBubbleProps {
@@ -67,28 +66,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
               {toolParts.map((p) => (
                 <ToolCall key={p.toolCallId} part={p as never} />
               ))}
-              {text && (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    // Citations link to SharePoint URLs on a different origin —
-                    // open in a new tab + noopener so the chat session is
-                    // never replaced and the destination can't reach window.opener.
-                    a: ({ href, children, ...rest }) => (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        {...rest}
-                      >
-                        {children}
-                      </a>
-                    ),
-                  }}
-                >
-                  {text}
-                </ReactMarkdown>
-              )}
+              {text && <Markdown>{text}</Markdown>}
               {isStreaming && <span className="streaming-caret" aria-hidden />}
             </div>
           )}

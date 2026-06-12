@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth"
 function MainContent() {
   const { view } = useAppView()
   return (
-    <main className="flex flex-1 flex-col">
+    <main className="flex min-h-0 flex-1 flex-col">
       {view === "sharepoint" ? <SharePointBrowser /> : <ChatPanel />}
     </main>
   )
