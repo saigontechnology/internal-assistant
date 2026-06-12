@@ -115,7 +115,7 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
     : 0
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="dark flex flex-col gap-3 text-foreground">
       <div className="rounded-lg border border-border bg-card/50 p-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="label-eyebrow text-muted-foreground">SharePoint List</span>

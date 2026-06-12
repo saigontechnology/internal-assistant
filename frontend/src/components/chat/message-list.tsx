@@ -32,7 +32,7 @@ export function MessageList({ messages, status, onSuggestionClick }: MessageList
             Internal Assistant · Reading Room
           </div>
 
-          <h2 className="mt-5 font-display text-6xl leading-[0.95] font-light tracking-tight text-foreground sm:text-7xl">
+          <h2 className="mt-5 text-6xl leading-[0.95] font-light tracking-tight text-foreground sm:text-7xl">
             Read between
             <br />
             <em className="font-normal text-primary italic">the lines.</em>
@@ -93,7 +93,7 @@ export function MessageList({ messages, status, onSuggestionClick }: MessageList
         ))}
         {isWaiting && (
           <div className="flex gap-3.5 px-1 py-2.5 duration-300 animate-in fade-in">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-[0.4rem] border border-primary/30 bg-primary/10 font-display text-sm font-semibold text-primary shadow-sm">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-[0.4rem] border border-primary/30 bg-primary/10 text-sm font-semibold text-primary shadow-sm">
               A
             </div>
             <div className="flex flex-col gap-1.5">

@@ -34,6 +34,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-docwise}
       OPENAI_API_BASE: ${OPENAI_API_BASE}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_HOST_OVERRIDE: ${OPENAI_HOST_OVERRIDE:-}
       CHAT_MODEL: ${CHAT_MODEL}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       CHUNK_SIZE: ${CHUNK_SIZE}
@@ -46,6 +47,11 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
     volumes:
       - backend_data:/app/data
+    # Lets the container reach services listening on the VPS host's
+    # loopback (e.g. 9router on :20128, run via pm2). Inside the container,
+    # use `host.docker.internal:<port>` instead of `localhost:<port>`.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:

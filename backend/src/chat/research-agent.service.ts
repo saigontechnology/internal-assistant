@@ -1,6 +1,7 @@
 import { streamText, stepCountIs, type StreamTextResult } from 'ai'
-import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
+import { type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
+import { buildOpenAIClient } from '../config/openai-client.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { buildDocumentTools } from '../documents/document-tools.js'
 
@@ -36,10 +37,7 @@ export class ResearchAgentService {
     private readonly config: AppConfig,
     private readonly embeddings: EmbeddingsService,
   ) {
-    this.openai = createOpenAI({
-      baseURL: this.config.openaiApiBase,
-      apiKey: this.config.openaiApiKey,
-    })
+    this.openai = buildOpenAIClient(this.config)
     this.tools = this.buildTools()
   }
 

@@ -1,15 +1,16 @@
 @import "tailwindcss";
-@import "@fontsource-variable/geist";
-@import "@fontsource-variable/geist-mono";
-@import "@fontsource-variable/fraunces/full.css";
+@import "@fontsource/roboto/300.css";
+@import "@fontsource/roboto/400.css";
+@import "@fontsource/roboto/500.css";
+@import "@fontsource/roboto/700.css";
 
 @theme inline {
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular,
-    "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --font-serif: "Fraunces Variable", "Iowan Old Style", "Palatino Linotype",
-    Georgia, "Times New Roman", serif;
+  --font-sans: "Roboto", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Roboto", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Roboto", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -48,82 +49,78 @@
   --radius-xl: calc(var(--radius) + 3px);
 }
 
-/* "Daylight" — warm paper & ink, terracotta accent */
+/* Light — clean white surfaces, dark-navy sidebar, lime-green primary */
 :root {
-  --background: oklch(0.972 0.008 79);
-  --foreground: oklch(0.215 0.018 58);
-  --card: oklch(0.991 0.006 84);
-  --card-foreground: oklch(0.215 0.018 58);
-  --popover: oklch(0.991 0.006 84);
-  --popover-foreground: oklch(0.215 0.018 58);
-  --primary: oklch(0.545 0.158 155);
-  --primary-foreground: oklch(0.99 0.012 84);
-  --secondary: oklch(0.94 0.012 76);
-  --secondary-foreground: oklch(0.27 0.02 55);
-  --muted: oklch(0.948 0.009 76);
-  --muted-foreground: oklch(0.475 0.024 52);
-  --accent: oklch(0.928 0.018 68);
-  --accent-foreground: oklch(0.27 0.02 55);
-  --destructive: oklch(0.55 0.2 27.3);
-  --destructive-foreground: oklch(0.55 0.2 27.3);
-  --border: oklch(0.886 0.014 72);
-  --input: oklch(0.886 0.014 72);
-  --ring: oklch(0.545 0.158 155);
-  --chart-1: oklch(0.545 0.158 155);
+  --background: oklch(0.97 0 0);
+  --foreground: oklch(0.22 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.01 260);
+  --primary: oklch(0.72 0.18 130);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.005 260);
+  --secondary-foreground: oklch(0.3 0.01 260);
+  --muted: oklch(0.95 0.005 260);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.94 0.02 130);
+  --accent-foreground: oklch(0.3 0.05 130);
+  --destructive: oklch(0.6 0.2 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0.005 260);
+  --input: oklch(0.9 0.005 260);
+  --ring: oklch(0.72 0.18 130);
+  --chart-1: oklch(0.72 0.18 130);
   --chart-2: oklch(0.6 0.118 184.714);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.4rem;
-  --sidebar: oklch(0.955 0.011 77);
-  --sidebar-foreground: oklch(0.215 0.018 58);
-  --sidebar-primary: oklch(0.545 0.158 155);
-  --sidebar-primary-foreground: oklch(0.99 0.012 84);
-  --sidebar-accent: oklch(0.928 0.018 68);
-  --sidebar-accent-foreground: oklch(0.27 0.02 55);
-  --sidebar-border: oklch(0.886 0.014 72);
-  --sidebar-ring: oklch(0.545 0.158 155);
-  /* ambient + grain, tuned per theme */
-  --glow: oklch(0.7 0.13 155 / 0.16);
-  --grain-opacity: 0.04;
+  /* Sidebar = dark navy with white text and green primary accent */
+  --sidebar: oklch(0.27 0.02 260);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.72 0.18 130);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.32 0.02 260);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(0.32 0.02 260);
+  --sidebar-ring: oklch(0.72 0.18 130);
 }
 
-/* "Reading lamp" — warm charcoal, parchment, amber accent */
+/* Dark — deep navy throughout, lime-green primary */
 .dark {
-  --background: oklch(0.182 0.012 56);
-  --foreground: oklch(0.922 0.012 82);
-  --card: oklch(0.216 0.014 56);
-  --card-foreground: oklch(0.922 0.012 82);
-  --popover: oklch(0.216 0.014 56);
-  --popover-foreground: oklch(0.922 0.012 82);
-  --primary: oklch(0.745 0.132 155);
-  --primary-foreground: oklch(0.2 0.03 58);
-  --secondary: oklch(0.268 0.014 56);
-  --secondary-foreground: oklch(0.922 0.012 82);
-  --muted: oklch(0.256 0.013 56);
-  --muted-foreground: oklch(0.685 0.016 70);
-  --accent: oklch(0.288 0.017 58);
-  --accent-foreground: oklch(0.922 0.012 82);
-  --destructive: oklch(0.42 0.15 25.7);
-  --destructive-foreground: oklch(0.7 0.21 25.3);
-  --border: oklch(0.302 0.014 56);
-  --input: oklch(0.302 0.014 56);
-  --ring: oklch(0.745 0.132 155);
-  --chart-1: oklch(0.745 0.132 155);
+  --background: oklch(0.2 0.015 260);
+  --foreground: oklch(0.95 0.005 260);
+  --card: oklch(0.24 0.015 260);
+  --card-foreground: oklch(0.95 0.005 260);
+  --popover: oklch(0.24 0.015 260);
+  --popover-foreground: oklch(0.95 0.005 260);
+  --primary: oklch(0.78 0.17 130);
+  --primary-foreground: oklch(0.2 0.02 260);
+  --secondary: oklch(0.28 0.015 260);
+  --secondary-foreground: oklch(0.95 0.005 260);
+  --muted: oklch(0.28 0.015 260);
+  --muted-foreground: oklch(0.7 0.01 260);
+  --accent: oklch(0.3 0.02 260);
+  --accent-foreground: oklch(0.95 0.005 260);
+  --destructive: oklch(0.5 0.18 27);
+  --destructive-foreground: oklch(0.97 0 0);
+  --border: oklch(0.32 0.015 260);
+  --input: oklch(0.32 0.015 260);
+  --ring: oklch(0.78 0.17 130);
+  --chart-1: oklch(0.78 0.17 130);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.164 0.011 56);
-  --sidebar-foreground: oklch(0.922 0.012 82);
-  --sidebar-primary: oklch(0.745 0.132 155);
-  --sidebar-primary-foreground: oklch(0.2 0.03 58);
-  --sidebar-accent: oklch(0.288 0.017 58);
-  --sidebar-accent-foreground: oklch(0.922 0.012 82);
-  --sidebar-border: oklch(0.302 0.014 56);
-  --sidebar-ring: oklch(0.745 0.132 155);
-  --glow: oklch(0.7 0.14 155 / 0.14);
-  --grain-opacity: 0.05;
+  --sidebar: oklch(0.17 0.015 260);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.78 0.17 130);
+  --sidebar-primary-foreground: oklch(0.2 0.02 260);
+  --sidebar-accent: oklch(0.24 0.015 260);
+  --sidebar-accent-foreground: oklch(0.95 0.005 260);
+  --sidebar-border: oklch(0.28 0.015 260);
+  --sidebar-ring: oklch(0.78 0.17 130);
 }
 
 @layer base {
@@ -135,26 +132,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
-    letter-spacing: -0.011em;
-    /* atmosphere: a soft reading-lamp glow over the paper */
-    background-image: radial-gradient(
-      120% 80% at 50% -10%,
-      var(--glow),
-      transparent 60%
-    );
-    background-attachment: fixed;
-  }
-  /* printed-paper grain overlay */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    pointer-events: none;
-    opacity: var(--grain-opacity);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    mix-blend-mode: soft-light;
+    letter-spacing: 0;
   }
   h1, h2, h3 {
     letter-spacing: -0.02em;
@@ -175,14 +153,6 @@
 }
 
 @layer components {
-  /* Editorial display serif — expressive optical axes */
-  .font-display {
-    font-family: var(--font-serif);
-    font-optical-sizing: auto;
-    font-variation-settings: "SOFT" 0, "WONK" 0, "opsz" 144;
-    letter-spacing: -0.02em;
-  }
-
   /* Small-caps editorial label */
   .label-eyebrow {
     font-family: var(--font-sans);
@@ -239,11 +209,9 @@
     @apply text-primary underline underline-offset-2 hover:text-primary/80;
   }
   .prose-message h1 {
-    font-family: var(--font-serif);
     @apply text-xl font-semibold tracking-tight;
   }
   .prose-message h2 {
-    font-family: var(--font-serif);
     @apply text-lg font-semibold tracking-tight;
   }
   .prose-message h3 {

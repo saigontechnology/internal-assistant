@@ -20,10 +20,10 @@ function AuthedApp() {
   return (
     <ConversationProvider>
       <AppViewProvider>
-        <div className="flex h-screen flex-col">
-          <Header />
-          <div className="flex flex-1 overflow-hidden">
-            <Sidebar />
+        <div className="flex h-screen overflow-hidden">
+          <Sidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <Header />
             <MainContent />
           </div>
         </div>

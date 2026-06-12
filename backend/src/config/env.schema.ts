@@ -28,6 +28,12 @@ export const envSchema = z.object({
   SESSION_SECRET: z.string().min(1).default('dev-insecure-secret-change-me'),
   NODE_ENV: z.enum(['development', 'production']).default('development'),
 
+  // Optional. When set, sent as the `Host` header on every outbound OpenAI
+  // request. Workaround for upstream proxies that gate on Host (e.g. our
+  // 9router instance on the VPS returns 401 unless Host is 127.0.0.1:20128).
+  // Leave empty in local dev when 9router is reached directly.
+  OPENAI_HOST_OVERRIDE: z.string().optional(),
+
   // SharePoint List watcher (Phase A). Resolved at sync time and cached in-process.
   SHAREPOINT_TENANT_HOSTNAME: z.string().min(1).default('saigontechnology0.sharepoint.com'),
   SHAREPOINT_SITE_PATH: z.string().min(1).default('/SDC/ISOSDC'),
