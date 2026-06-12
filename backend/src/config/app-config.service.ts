@@ -1,0 +1,50 @@
+import { ConfigService } from '@nestjs/config'
+import type { Env } from './env.schema.js'
+import { buildDatabaseUrl } from './database-url.js'
+
+/**
+ * Typed wrapper around @nestjs/config so callers get autocomplete + compile
+ * errors when env vars are renamed, instead of stringly-typed getters.
+ *
+ * Plain class (no @Injectable) — wired in app.module.ts via a factory provider
+ * so DI works under tsx/esbuild without `emitDecoratorMetadata`.
+ */
+export class AppConfig {
+  constructor(private readonly raw: ConfigService<Env, true>) {}
+
+  // ── LLM ──
+  get openaiApiBase() { return this.raw.getOrThrow('OPENAI_API_BASE') }
+  get openaiApiKey()  { return this.raw.getOrThrow('OPENAI_API_KEY') }
+  get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
+  get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
+  get chunkSize()     { return this.raw.getOrThrow('CHUNK_SIZE') }
+  get chunkOverlap()  { return this.raw.getOrThrow('CHUNK_OVERLAP') }
+
+  // ── Postgres ──
+  get databaseUrl() {
+    return buildDatabaseUrl({
+      POSTGRES_HOST: this.raw.getOrThrow('POSTGRES_HOST'),
+      POSTGRES_PORT: this.raw.getOrThrow('POSTGRES_PORT'),
+      POSTGRES_USER: this.raw.getOrThrow('POSTGRES_USER'),
+      POSTGRES_PASSWORD: this.raw.getOrThrow('POSTGRES_PASSWORD'),
+      POSTGRES_DB: this.raw.getOrThrow('POSTGRES_DB'),
+    })
+  }
+
+  // ── Azure / MSAL ──
+  get azureClientId()     { return this.raw.getOrThrow('AZURE_CLIENT_ID') }
+  get azureTenantId()     { return this.raw.getOrThrow('AZURE_TENANT_ID') }
+  get azureClientSecret() { return this.raw.getOrThrow('AZURE_CLIENT_SECRET') }
+  get azureRedirectUri()  { return this.raw.getOrThrow('AZURE_REDIRECT_URI') }
+
+  // ── App ──
+  get frontendUrl()    { return this.raw.getOrThrow('FRONTEND_URL') }
+  get sessionSecret()  { return this.raw.getOrThrow('SESSION_SECRET') }
+  get isProd()         { return this.raw.getOrThrow('NODE_ENV') === 'production' }
+}
+
+/**
+ * Microsoft Graph delegated scopes requested during sign-in. MSAL adds the
+ * reserved openid/profile/offline_access scopes automatically.
+ */
+export const graphScopes = ['Sites.Read.All', 'Files.Read.All']

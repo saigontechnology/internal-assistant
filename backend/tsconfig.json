@@ -10,11 +10,13 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src", "drizzle.config.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src", "prisma.config.ts"],
+  "exclude": ["node_modules", "dist", "spikes"]
 }
