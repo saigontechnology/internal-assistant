@@ -8,7 +8,7 @@ const envSchema = z.object({
   CHUNK_SIZE: z.coerce.number().default(1000),
   CHUNK_OVERLAP: z.coerce.number().default(200),
 
-  DATABASE_URL: z.string().url("DATABASE_URL must be a valid Neon connection string"),
+  DATABASE_URL: z.string().url("DATABASE_URL must be a valid Postgres connection string"),
 
   AZURE_CLIENT_ID: z.string().min(1, "AZURE_CLIENT_ID is required"),
   AZURE_TENANT_ID: z.string().min(1, "AZURE_TENANT_ID is required"),

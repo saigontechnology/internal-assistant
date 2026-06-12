@@ -17,7 +17,6 @@
     "@azure/msal-node": "^3.0.0",
     "@hono/node-server": "^1.14.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@neondatabase/serverless": "^1.1.0",
     "ai": "^6.0.0",
     "csv-parse": "^5.6.0",
     "dotenv": "^16.5.0",
@@ -26,12 +25,14 @@
     "mammoth": "^1.9.0",
     "nanoid": "^5.1.11",
     "pdf-parse": "^1.1.1",
+    "pg": "^8.13.1",
     "xlsx": "^0.18.5",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/pdf-parse": "^1.1.4",
+    "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"

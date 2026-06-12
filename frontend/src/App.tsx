@@ -2,8 +2,10 @@ import { Header } from "@/components/layout/header"
 import { Sidebar } from "@/components/layout/sidebar"
 import { ChatPanel } from "@/components/chat/chat-panel"
 import { SharePointBrowser } from "@/components/documents/sharepoint-browser"
+import { LoginPage } from "@/components/auth/login-page"
 import { ConversationProvider } from "@/lib/conversations"
 import { AppViewProvider, useAppView } from "@/lib/app-view"
+import { useAuth } from "@/lib/auth"
 
 function MainContent() {
   const { view } = useAppView()
@@ -14,7 +16,7 @@ function MainContent() {
   )
 }
 
-export default function App() {
+function AuthedApp() {
   return (
     <ConversationProvider>
       <AppViewProvider>
@@ -28,4 +30,18 @@ export default function App() {
       </AppViewProvider>
     </ConversationProvider>
   )
+}
+
+export default function App() {
+  const { isAuthenticated, isLoading } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading…
+      </div>
+    )
+  }
+
+  return isAuthenticated ? <AuthedApp /> : <LoginPage />
 }
