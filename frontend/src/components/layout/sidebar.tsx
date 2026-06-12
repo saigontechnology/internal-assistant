@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
-import { UploadZone } from "@/components/documents/upload-zone"
+import { SyncPanel } from "@/components/documents/sync-panel"
 import { DocumentList } from "@/components/documents/document-list"
 import { fetchDocuments, deleteDocument, type DocumentInfo } from "@/lib/api"
 import { useConversations } from "@/lib/conversations"
@@ -205,16 +205,19 @@ export function Sidebar() {
               </span>
             </div>
             <Separator />
+            {/* SyncPanel stays pinned at the top; only the document list
+                scrolls below it. Two stacked regions inside the flex column:
+                the top one is `shrink-0`, the bottom one owns the scrollbar. */}
+            <div className="shrink-0 p-4 pb-3">
+              <SyncPanel onSyncComplete={loadDocuments} />
+            </div>
+            <Separator />
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="flex flex-col gap-4">
-                <UploadZone onUploadComplete={loadDocuments} />
-                <Separator />
-                <DocumentList
-                  documents={documents}
-                  isLoading={isLoading}
-                  onDelete={handleDelete}
-                />
-              </div>
+              <DocumentList
+                documents={documents}
+                isLoading={isLoading}
+                onDelete={handleDelete}
+              />
             </div>
           </>
         )}
