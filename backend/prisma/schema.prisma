@@ -36,6 +36,11 @@ model Resource {
   sharepointListId  String?   @map("sharepoint_list_id")
   sharepointCode    String?   @map("sharepoint_code")
   sharepointVersion String?   @map("sharepoint_version")
+  // Set when the source list shows a newer Ver than what we have synced AND
+  // the current caller couldn't resolve the new file. Embeddings still reflect
+  // `sharepointVersion`; the row is flagged so the UI can warn users that
+  // a fresher copy exists but nobody with access has refreshed it yet.
+  sharepointPendingVersion String? @map("sharepoint_pending_version")
   sourceMetadata    Json?     @map("source_metadata")
   syncStatus        String    @default("synced") @map("sync_status")
   syncError         String?   @map("sync_error")
@@ -86,6 +91,13 @@ model Embedding {
 
   @@index([resourceId], map: "embeddings_resource_id_idx")
   @@map("embeddings")
+}
+
+model SyncAllowlist {
+  email     String   @id
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@map("sync_allowlist")
 }
 
 model Session {

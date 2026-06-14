@@ -11,6 +11,8 @@ export interface DocumentInfo {
   linkUrl?: string
   sharepointCode?: string
   sharepointVersion?: string
+  /** Newer Ver detected on the list but no caller could resolve the new file yet. */
+  sharepointPendingVersion?: string
   syncStatus?: SyncStatus
   syncError?: string
   title?: string

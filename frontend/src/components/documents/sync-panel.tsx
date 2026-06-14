@@ -9,6 +9,7 @@ import {
   type SyncRun,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth"
 
 interface SyncPanelProps {
   onSyncComplete: () => void
@@ -35,9 +36,12 @@ function formatDuration(ms: number): string {
 }
 
 export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
+  const { user } = useAuth()
+  const canSync = user?.isAllowedToSync ?? false
   const [status, setStatus] = useState<SyncStatusResponse | null>(null)
   const [isLoadingStatus, setIsLoadingStatus] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pollRef = useRef<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -85,6 +89,19 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
       pollRef.current = null
     }
   }, [isSyncing, loadStatus])
+
+  const refresh = async () => {
+    setError(null)
+    setIsRefreshing(true)
+    try {
+      await loadStatus()
+      // Pull the latest documents list too so any sync run by another user
+      // shows up immediately.
+      onSyncComplete()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   const startSync = async () => {
     setError(null)
@@ -156,26 +173,55 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
         )}
       </div>
 
-      <Button
-        onClick={startSync}
-        disabled={isSyncing}
-        className="w-full gap-2"
-        size="sm"
-      >
-        {isSyncing ? (
-          <>
-            <Loader2 className="size-4 animate-spin" />
-            Syncing…
-          </>
-        ) : (
-          <>
-            <RefreshCw className="size-4" />
-            Sync now
-          </>
-        )}
-      </Button>
+      {canSync ? (
+        <Button
+          onClick={startSync}
+          disabled={isSyncing}
+          className="w-full gap-2"
+          size="sm"
+        >
+          {isSyncing ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Syncing…
+            </>
+          ) : (
+            <>
+              <RefreshCw className="size-4" />
+              Sync now
+            </>
+          )}
+        </Button>
+      ) : (
+        <Button
+          onClick={refresh}
+          disabled={isRefreshing || isSyncing}
+          variant="outline"
+          className="w-full gap-2"
+          size="sm"
+        >
+          {isRefreshing ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Refreshing…
+            </>
+          ) : (
+            <>
+              <RefreshCw className="size-4" />
+              Refresh
+            </>
+          )}
+        </Button>
+      )}
 
-      {isSyncing && (
+      {!canSync && (
+        <p className="text-center text-[11px] text-muted-foreground">
+          Your account isn't authorized to start a sync. Use Refresh to pull
+          the latest status.
+        </p>
+      )}
+
+      {canSync && isSyncing && (
         <p className="text-center text-xs text-muted-foreground">
           This usually takes a few minutes. You can keep using the chat while it runs.
         </p>

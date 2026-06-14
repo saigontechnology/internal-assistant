@@ -4,6 +4,7 @@ import { AuthService } from './auth.service.js'
 import { Public } from './public.decorator.js'
 import { SessionCookieService } from './session-cookie.service.js'
 import { SessionService } from './session.service.js'
+import { SyncAllowlistService } from './sync-allowlist.service.js'
 
 @Controller('auth')
 export class AuthController {
@@ -11,6 +12,7 @@ export class AuthController {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(SessionCookieService) private readonly cookies: SessionCookieService,
+    @Inject(SyncAllowlistService) private readonly allowlist: SyncAllowlistService,
   ) {}
 
   @Public()
@@ -44,9 +46,10 @@ export class AuthController {
     if (!id) return { authenticated: false }
     const session = await this.sessions.get(id)
     if (!session) return { authenticated: false }
+    const isAllowedToSync = await this.allowlist.isAllowed(session.username)
     return {
       authenticated: true,
-      user: { username: session.username, name: session.name },
+      user: { username: session.username, name: session.name, isAllowedToSync },
     }
   }
 

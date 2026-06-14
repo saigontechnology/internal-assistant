@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   PreconditionFailedException,
@@ -11,6 +12,7 @@ import type { Request } from 'express'
 import type { Session } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { SessionService } from '../auth/session.service.js'
+import { SyncAllowlistService } from '../auth/sync-allowlist.service.js'
 import { DelegatedGraphTokenProvider } from './graph-token-provider.js'
 import { AlreadyRunningError, ListWatcherService } from './list-watcher.service.js'
 import { SharepointListService } from './sharepoint-list.service.js'
@@ -26,11 +28,15 @@ export class SyncController {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(SharepointListService) private readonly listSvc: SharepointListService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(SyncAllowlistService) private readonly allowlist: SyncAllowlistService,
   ) {}
 
   @Post()
   async start(@Req() req: Request) {
     const session = (req as Request & { session: Session }).session
+    if (!(await this.allowlist.isAllowed(session.username))) {
+      throw new ForbiddenException('This account is not permitted to trigger a sync')
+    }
     const tokenProvider = new DelegatedGraphTokenProvider(session, this.sessions)
 
     try {

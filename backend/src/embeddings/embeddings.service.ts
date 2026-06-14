@@ -179,6 +179,7 @@ export class EmbeddingsService {
       sharepoint_url: string | null
       sharepoint_code: string | null
       sharepoint_version: string | null
+      sharepoint_pending_version: string | null
       sync_status: string
       sync_error: string | null
       source_metadata: Record<string, unknown> | null
@@ -192,6 +193,7 @@ export class EmbeddingsService {
              r.sharepoint_url,
              r.sharepoint_code,
              r.sharepoint_version,
+             r.sharepoint_pending_version,
              r.sync_status,
              r.sync_error,
              r.source_metadata,
@@ -216,6 +218,7 @@ export class EmbeddingsService {
         linkUrl: linkFromMetadata ?? r.sharepoint_url ?? undefined,
         sharepointCode: r.sharepoint_code ?? undefined,
         sharepointVersion: r.sharepoint_version ?? undefined,
+        sharepointPendingVersion: r.sharepoint_pending_version ?? undefined,
         syncStatus: r.sync_status as DocumentInfo['syncStatus'],
         syncError: r.sync_error ?? undefined,
         title: typeof md.title === 'string' ? md.title : undefined,

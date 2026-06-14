@@ -96,31 +96,72 @@ export class SharepointListService {
     args: { code: string; title: string; version: string },
   ): Promise<ResolvedDriveItem | null> {
     const stem = buildPredictedStem(args)
-    const hits = await this.graphPost<SearchResponse>(tokens, '/search/query', {
+    const normStem = normalizeForMatch(stem)
+    const normCode = normalizeForMatch(args.code)
+
+    // Shot 1 — strict quoted-phrase search on the full predicted stem.
+    // Cheap and unambiguous when SP Search's tokenizer cooperates.
+    let items = await this.searchDriveItems(tokens, `"${stem}"`, 5)
+    let matched = items.find((h) =>
+      normalizeForMatch(h.resource?.name ?? '').startsWith(normStem),
+    )
+
+    // Shot 2 — codes containing `.` (e.g. "QT-HR.13") often zero-hit the
+    // quoted-phrase search because SP Search tokenizes on the period.
+    // Re-query with just the code, unquoted, and pick the best hit whose
+    // filename contains the code AND looks like our predicted stem.
+    if (!matched?.resource) {
+      const fallback = await this.searchDriveItems(tokens, args.code, 25)
+      matched =
+        fallback.find((h) =>
+          normalizeForMatch(h.resource?.name ?? '').startsWith(normStem),
+        ) ??
+        fallback.find((h) =>
+          normalizeForMatch(h.resource?.name ?? '').includes(normCode),
+        )
+      if (matched) items = fallback
+    }
+
+    if (!matched?.resource) {
+      // Diagnostic: when Strategy H misses, print the predicted stem and the
+      // top hit names so we can see whether the file was returned at all and,
+      // if so, exactly how the actual name diverges from our prefix.
+      console.warn('[Strategy H miss]', {
+        code: args.code,
+        title: args.title,
+        version: args.version,
+        stem,
+        normStem,
+        hits: items.map((h) => h.resource?.name).filter(Boolean),
+      })
+      return null
+    }
+    const r = matched.resource
+    const driveId = r.parentReference?.driveId
+    if (!driveId || !r.id || !r.name) return null
+    return { driveId, itemId: r.id, name: r.name, eTag: r.eTag, size: r.size, webUrl: r.webUrl }
+  }
+
+  private async searchDriveItems(
+    tokens: GraphTokenProvider,
+    queryString: string,
+    size: number,
+  ): Promise<SearchResponse['value'][number]['hitsContainers'][number]['hits']> {
+    const res = await this.graphPost<SearchResponse>(tokens, '/search/query', {
       requests: [
         {
           entityTypes: ['driveItem'],
-          query: { queryString: `"${stem}"` },
+          query: { queryString },
           // `id` MUST be explicit — Graph Search only returns selected fields.
           // Omitting it caused every row to look like a 'pending_access' miss
           // because resolveByCode's null-check on r.id fired.
           fields: ['id', 'name', 'parentReference', 'eTag', 'size', 'webUrl'],
           from: 0,
-          size: 5,
+          size,
         },
       ],
     })
-    const items = hits.value?.[0]?.hitsContainers?.[0]?.hits ?? []
-    const normStem = normalizeForMatch(stem)
-    const matched = items.find((h) => {
-      const name = (h.resource?.name ?? '') as string
-      return normalizeForMatch(name).startsWith(normStem)
-    })
-    if (!matched?.resource) return null
-    const r = matched.resource
-    const driveId = r.parentReference?.driveId
-    if (!driveId || !r.id || !r.name) return null
-    return { driveId, itemId: r.id, name: r.name, eTag: r.eTag, size: r.size, webUrl: r.webUrl }
+    return res.value?.[0]?.hitsContainers?.[0]?.hits ?? []
   }
 
   /** Stream the file bytes for a resolved driveItem into a Buffer. */

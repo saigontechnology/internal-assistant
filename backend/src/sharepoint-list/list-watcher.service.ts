@@ -126,6 +126,12 @@ export class ListWatcherService {
                 status: 'pending_access',
                 error: 'predicted-filename search returned no matching driveItem',
               })
+            } else if (await this.documents.isAlreadySyncedAtVersion(listId, code, version)) {
+              // Save a Graph download: another caller already synced this exact
+              // (code, version). Case 1 in upsertFromSharepointList would skip
+              // anyway after parsing/embedding nothing, but we'd still pay the
+              // bytes. Short-circuit here.
+              outcome = { kind: 'skipped' }
             } else {
               const buffer = await this.listSvc.downloadFile(tokens, resolved)
               outcome = await this.documents.upsertFromSharepointList({
