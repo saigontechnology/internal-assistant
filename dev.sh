@@ -83,16 +83,9 @@ svc=$(tmux split-window -P -F '#{pane_id}' -v -l 85% -t "$SESSION" -c "$ROOT/bac
 tmux select-pane -t "$svc" -T "⚙ backend  :8000"
 tmux send-keys   -t "$svc" 'npm run dev' Enter
 
-# claude (bottom, full width — 70% of the lower region).
-cla=$(tmux split-window -P -F '#{pane_id}' -v -l 70% -t "$svc" -c "$ROOT")
-tmux select-pane -t "$cla" -T "✦ claude"
-tmux send-keys   -t "$cla" 'claude' Enter
-
 # frontend (right of backend).
 fe=$(tmux split-window -P -F '#{pane_id}' -h -t "$svc" -c "$ROOT/frontend")
 tmux select-pane -t "$fe" -T "▲ frontend :5173"
 tmux send-keys   -t "$fe" 'npm run dev' Enter
 
-# Land focus on the claude pane.
-tmux select-pane -t "$cla"
 exec tmux attach -t "$SESSION"

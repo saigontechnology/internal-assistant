@@ -102,10 +102,20 @@ export class EmbeddingsService {
     try {
       const queryEmbedding = await this.generateEmbedding(query)
       const vec = JSON.stringify(queryEmbedding)
-      const filenameClause =
+      // Filter is shared between the vector and FTS legs of the hybrid query;
+      // expressed as an AND-clause so we can join it onto the always-true
+      // `WHERE 1=1` baseline without branching SQL shape.
+      const filenameAnd =
         filenames && filenames.length > 0
-          ? Prisma.sql`WHERE r.filename IN (${Prisma.join(filenames)})`
+          ? Prisma.sql`AND r.filename IN (${Prisma.join(filenames)})`
           : Prisma.empty
+      // Pull a wider candidate pool than k so RRF has room to re-rank — and
+      // so the per-doc cap below has alternatives when a single doc would
+      // otherwise sweep the top of one leg.
+      const fetchSize = Math.max(k * 5, 30)
+      // RRF k constant from Cormack et al. 2009. 60 is the canonical value;
+      // it dampens contributions from low ranks without erasing them.
+      const rrfK = 60
 
       type Row = {
         content: string
@@ -113,20 +123,59 @@ export class EmbeddingsService {
         filename: string
         sharepoint_url: string | null
         source_metadata: Record<string, unknown> | null
-        distance: number
+        score: number
       }
+      // Hybrid retrieval: rank candidates by vector cosine distance AND by
+      // FTS ts_rank_cd in parallel, fuse via Reciprocal Rank Fusion (sum of
+      // 1/(k+rank) across legs). RRF is robust to wildly different score
+      // distributions, which is exactly the vector-vs-BM25 problem.
+      //
+      // The FTS leg uses `plainto_tsquery` so user input is sanitized; if
+      // the query is all stopwords the tsquery is empty and the @@ match
+      // returns no rows — that's fine, the vector leg still contributes.
       const rows = await this.prisma.$queryRaw<Row[]>`
+        WITH q AS (
+          SELECT plainto_tsquery('english', ${query}) AS tsq
+        ),
+        vec AS (
+          SELECT e.id,
+                 ROW_NUMBER() OVER (ORDER BY e.embedding <=> ${vec}::halfvec) AS rnk
+          FROM embeddings e
+          INNER JOIN resources r ON e.resource_id = r.id
+          WHERE 1=1 ${filenameAnd}
+          ORDER BY e.embedding <=> ${vec}::halfvec
+          LIMIT ${fetchSize}
+        ),
+        fts AS (
+          SELECT e.id,
+                 ROW_NUMBER() OVER (ORDER BY ts_rank_cd(e.content_tsv, q.tsq) DESC) AS rnk
+          FROM embeddings e
+          INNER JOIN resources r ON e.resource_id = r.id
+          CROSS JOIN q
+          WHERE e.content_tsv @@ q.tsq ${filenameAnd}
+          ORDER BY ts_rank_cd(e.content_tsv, q.tsq) DESC
+          LIMIT ${fetchSize}
+        ),
+        fused AS (
+          SELECT id, SUM(1.0 / (${rrfK} + rnk))::float AS score
+          FROM (
+            SELECT id, rnk FROM vec
+            UNION ALL
+            SELECT id, rnk FROM fts
+          ) u
+          GROUP BY id
+        )
         SELECT e.content,
                e.metadata,
                r.filename,
                r.sharepoint_url,
                r.source_metadata,
-               (e.embedding <=> ${vec}::halfvec)::float AS distance
-        FROM embeddings e
+               f.score
+        FROM fused f
+        INNER JOIN embeddings e ON e.id = f.id
         INNER JOIN resources r ON e.resource_id = r.id
-        ${filenameClause}
-        ORDER BY e.embedding <=> ${vec}::halfvec
-        LIMIT ${k * 3}
+        ORDER BY f.score DESC
+        LIMIT ${fetchSize}
       `
 
       // Cap per-document so a single dominant file can't drown out the rest.

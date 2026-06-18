@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { SyncPanel } from "@/components/documents/sync-panel"
@@ -118,7 +118,20 @@ export function Sidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("chats")
   const [documents, setDocuments] = useState<DocumentInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [showTabs, setShowTabs] = useState(false)
+  const logoClicksRef = useRef<number[]>([])
   const { docsRefreshToken } = useAppView()
+
+  const handleLogoClick = () => {
+    const now = Date.now()
+    logoClicksRef.current = [...logoClicksRef.current, now].filter(
+      (t) => now - t <= 3000
+    )
+    if (logoClicksRef.current.length >= 10) {
+      setShowTabs((prev) => !prev)
+      logoClicksRef.current = []
+    }
+  }
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -152,6 +165,8 @@ export function Sidebar() {
           src={logoUrlWhite}
           alt="Internal Assistant"
           className="h-8 w-auto shrink-0"
+          onClick={handleLogoClick}
+          draggable={false}
         />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-wide">
@@ -164,6 +179,7 @@ export function Sidebar() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
+        {showTabs && (
         <TooltipProvider>
           <nav className="flex w-12 flex-col items-center gap-1 border-r border-sidebar-border py-3">
             <Tooltip>
@@ -201,6 +217,7 @@ export function Sidebar() {
             </Tooltip>
           </nav>
         </TooltipProvider>
+        )}
 
         <div className="flex w-72 flex-col">
           {activeTab === "chats" ? (

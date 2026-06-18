@@ -11,14 +11,24 @@ export function splitText(
   metadata: Record<string, string>,
   chunkSize: number,
   chunkOverlap: number,
+  /**
+   * Optional one-line contextual header prepended to every chunk's text BEFORE
+   * embedding and BEFORE storage. Gives the embedding model (and the LLM at
+   * answer time) the doc title / filename / type that a raw mid-doc paragraph
+   * would otherwise lack. Costs ~30-60 tokens per chunk in exchange for a
+   * meaningful retrieval-quality bump on conversational queries that don't
+   * repeat document vocabulary.
+   */
+  header?: string,
 ): TextChunk[] {
   const chunks = recursiveSplit(text, DEFAULT_SEPARATORS, chunkSize)
+  const prefix = header ? `${header}\n\n` : ''
 
   return chunks
     .map((chunk) => chunk.trim())
     .filter((chunk) => chunk.length > 0)
     .map((chunk, i) => ({
-      text: chunk,
+      text: prefix + chunk,
       metadata: { ...metadata, chunk_index: String(i) },
     }))
 

@@ -10,14 +10,26 @@ import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 export function buildDocumentTools(embeddings: EmbeddingsService) {
   const listDocumentsTool = tool({
     description:
-      'List every document the user has uploaded, with filename, file type, and chunk count. Call this before searching when you need to know what files exist or when the user asks about their library inventory.',
+      "Return an aggregated summary of the user's document library (total count + per-department breakdown). Use this only when the user explicitly asks for an inventory or count. For finding specific documents to answer questions, call retrieveResources directly — it searches the full library.",
     inputSchema: z.object({}),
     execute: async () => {
       const docs = await embeddings.listResourcesWithCounts()
       if (docs.length === 0) return 'The user has no documents uploaded.'
-      return docs
-        .map((d) => `- ${d.filename} (${d.fileType.toUpperCase()}, ${d.chunkCount} chunks)`)
+      // Aggregate by department code (e.g. "QT-HR.13" → "HR") instead of
+      // dumping all N filenames into the prompt. A 375-row dump was costing
+      // ~14k input tokens per agent step; this is ~50 tokens.
+      const byDept = new Map<string, number>()
+      for (const d of docs) {
+        const code = d.sharepointCode ?? ''
+        const m = code.match(/^[A-Z]+-([A-Z]+)/)
+        const dept = m ? m[1] : code ? 'other' : 'uncategorized'
+        byDept.set(dept, (byDept.get(dept) ?? 0) + 1)
+      }
+      const breakdown = [...byDept.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([dept, n]) => `- ${dept}: ${n}`)
         .join('\n')
+      return `${docs.length} documents across ${byDept.size} departments:\n${breakdown}\n\nTo find specific documents, use retrieveResources with a focused query.`
     },
   })
 
