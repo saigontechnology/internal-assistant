@@ -51,6 +51,10 @@ export class AppConfig {
   get sharepointHostname() { return this.raw.getOrThrow('SHAREPOINT_TENANT_HOSTNAME') }
   get sharepointSitePath() { return this.raw.getOrThrow('SHAREPOINT_SITE_PATH') }
   get sharepointListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
+
+  // ── Per-user sync ──
+  get userPermCacheTtlDays(): number { return this.raw.getOrThrow('USER_PERM_CACHE_TTL_DAYS') }
+  get userSyncIntervalDays(): number { return this.raw.getOrThrow('USER_SYNC_INTERVAL_DAYS') }
 }
 
 /**

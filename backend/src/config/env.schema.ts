@@ -38,6 +38,14 @@ export const envSchema = z.object({
   SHAREPOINT_TENANT_HOSTNAME: z.string().min(1).default('saigontechnology0.sharepoint.com'),
   SHAREPOINT_SITE_PATH: z.string().min(1).default('/SDC/ISOSDC'),
   SHAREPOINT_LIST_NAME: z.string().min(1).default('Danh mục total SDC'),
+
+  // Per-user permission cache TTL (days). Rows in user_resource_permissions
+  // older than this are re-checked against Graph on the next per-user sync.
+  USER_PERM_CACHE_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
+  // How many days between weekly resyncs. A GET /api/user/permission whose
+  // lastSync is older than this triggers a background per-user sync.
+  USER_SYNC_INTERVAL_DAYS: z.coerce.number().int().positive().default(7),
 })
 
 export type Env = z.infer<typeof envSchema>

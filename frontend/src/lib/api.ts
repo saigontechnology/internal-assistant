@@ -210,6 +210,45 @@ export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
  * open for the entire sync duration (~10 min on the full list). Callers should
  * give it a generous AbortSignal or just rely on the in-process lock.
  */
+// ─── Per-user permission / sync ───────────────────────────────────────
+
+export interface UserPermissionStatus {
+  email: string
+  firstSyncing: boolean
+  hasRecord: boolean
+  lastSync: string | null
+  unauthorizedCount: number
+  syncing: boolean
+}
+
+export type UserSyncState = "idle" | "queued" | "running" | "done"
+
+export interface UserSyncStatus {
+  state: UserSyncState
+  yourPosition: number | null
+  queueLength: number
+  progressPercent: number
+  itemsSeen: number
+  itemsTotal: number | null
+  startedAt: string | null
+  lastError: string | null
+}
+
+export async function fetchUserPermission(): Promise<UserPermissionStatus> {
+  const res = await apiFetch("/api/user/permission")
+  return res.json()
+}
+
+export async function fetchUserSyncStatus(): Promise<UserSyncStatus> {
+  const res = await apiFetch("/api/user/sync/status")
+  return res.json()
+}
+
+export async function startUserSync(): Promise<{ status: "started" | "queued" | "already_present" }> {
+  const res = await apiFetch("/api/user/sync", { method: "POST" })
+  return res.json()
+}
+
 export async function triggerSync(signal?: AbortSignal): Promise<SyncRun> {
   const res = await fetch("/api/sync", { method: "POST", signal })
   if (res.status === 409) throw new Error("A sync is already running")

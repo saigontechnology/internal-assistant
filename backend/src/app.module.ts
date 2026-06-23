@@ -7,6 +7,7 @@ import { SharepointModule } from './sharepoint/sharepoint.module.js'
 import { DocumentsModule } from './documents/documents.module.js'
 import { ChatModule } from './chat/chat.module.js'
 import { SharepointListModule } from './sharepoint-list/sharepoint-list.module.js'
+import { UserPermissionModule } from './user-permission/user-permission.module.js'
 import { AppController } from './app.controller.js'
 
 @Module({
@@ -18,6 +19,7 @@ import { AppController } from './app.controller.js'
     SharepointModule,
     DocumentsModule,
     SharepointListModule,
+    UserPermissionModule,
     ChatModule,
   ],
   controllers: [AppController],
