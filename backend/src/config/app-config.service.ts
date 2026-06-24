@@ -53,12 +53,24 @@ export class AppConfig {
   get sharepointListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
 
   // ── Per-user sync ──
-  get userPermCacheTtlDays(): number { return this.raw.getOrThrow('USER_PERM_CACHE_TTL_DAYS') }
   get userSyncIntervalDays(): number { return this.raw.getOrThrow('USER_SYNC_INTERVAL_DAYS') }
+  /** Normalized fallback profile tuple — used when a user's own profile isn't ready. */
+  get defaultProfile(): { jobTitle: string; department: string } {
+    return {
+      jobTitle: normalizeProfileField(this.raw.getOrThrow('DEFAULT_JOB_TITLE')),
+      department: normalizeProfileField(this.raw.getOrThrow('DEFAULT_DEPARTMENT')),
+    }
+  }
+}
+
+/** Shared normalization for jobTitle / department fields (storage + lookup). */
+export function normalizeProfileField(v: string | null | undefined): string {
+  const s = (v ?? '').trim().toLocaleLowerCase()
+  return s.length === 0 ? '__unassigned__' : s
 }
 
 /**
  * Microsoft Graph delegated scopes requested during sign-in. MSAL adds the
  * reserved openid/profile/offline_access scopes automatically.
  */
-export const graphScopes = ['Sites.Read.All', 'Files.Read.All']
+export const graphScopes = ['Sites.Read.All', 'Files.Read.All', 'User.Read']

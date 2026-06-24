@@ -112,39 +112,51 @@ model Session {
   @@map("sessions")
 }
 
-// Per-user permission view of the shared library.
-//
-// `listUnauthorized` is a denormalized, comma-joined cache rebuilt at the end
-// of every per-user sync (sourced from UserResourcePermission). The chat
-// hot-path reads this single row instead of joining the per-resource table.
-//
-// `firstSyncing` flips false after the first successful sync. `syncingStartedAt`
-// is non-null while a job is running; a >30 min stale value is treated as a
-// crashed job and healed by the next GET /api/user/permission.
+// Per-user metadata. Access control happens via JobProfile/JobProfileAccess —
+// this row carries the user's normalized (jobTitle, department) tuple plus
+// their personal resync cadence. `displayJobTitle` / `displayDepartment` keep
+// the original AAD casing for UI; the lowercased fields are the join keys.
 model UserPermission {
-  email            String    @id
-  firstSyncing     Boolean   @default(true) @map("first_syncing")
-  listUnauthorized String    @default("")   @map("list_unauthorized")
-  lastSync         DateTime? @map("last_sync") @db.Timestamp(6)
-  syncingStartedAt DateTime? @map("syncing_started_at") @db.Timestamp(6)
-  itemsSeen        Int?      @map("items_seen")
-  itemsTotal       Int?      @map("items_total")
-  lastError        String?   @map("last_error")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  email              String    @id
+  jobTitle           String    @default("__unassigned__") @map("job_title")
+  department         String    @default("__unassigned__") @map("department")
+  displayJobTitle    String    @default("")              @map("display_job_title")
+  displayDepartment  String    @default("")              @map("display_department")
+  lastSync           DateTime? @map("last_sync") @db.Timestamp(6)
+  lastError          String?   @map("last_error")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
+  @@index([jobTitle, department])
   @@map("user_permissions")
 }
 
-// Per-user authorization cache, keyed on (email, sharepointCode). Lets the
-// weekly resync skip Graph round-trips for rows checked within the TTL window
-// (default 30 days, configurable via USER_PERM_CACHE_TTL_DAYS).
-model UserResourcePermission {
-  email          String
-  sharepointCode String   @map("sharepoint_code")
-  authorized     Boolean
-  checkedAt      DateTime @map("checked_at") @db.Timestamp(6)
+// Per-job-profile cache. The (jobTitle, department) tuple is the access-control
+// unit; `lastSync` is the authoritative resync cadence (NOT per-user). `syncing`
+// is the in-flight lock that prevents two users with the same profile from
+// scanning concurrently.
+model JobProfile {
+  jobTitle      String    @map("job_title")
+  department    String    @map("department")
+  lastSync      DateTime? @map("last_sync") @db.Timestamp(6)
+  syncedByEmail String?   @map("synced_by_email")
+  syncing       Boolean   @default(false)
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  @@id([email, sharepointCode])
-  @@map("user_resource_permissions")
+  @@id([jobTitle, department])
+  @@map("job_profiles")
+}
+
+// (jobTitle, department) → sharepointCode allow-list. Rebuilt at the end of
+// every successful scan (DELETE WHERE profile + bulk INSERT inside a tx).
+model JobProfileAccess {
+  jobTitle       String @map("job_title")
+  department     String @map("department")
+  sharepointCode String @map("sharepoint_code")
+
+  @@id([jobTitle, department, sharepointCode])
+  @@index([jobTitle, department])
+  @@map("job_profile_access")
 }

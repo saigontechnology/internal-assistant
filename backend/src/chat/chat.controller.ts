@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Controller,
   Inject,
   Post,
@@ -10,9 +9,7 @@ import {
 import type { Request, Response } from 'express'
 import { readUIMessageStream, type UIMessage } from 'ai'
 import type { Session } from '@prisma/client'
-import { SessionCookieService } from '../auth/session-cookie.service.js'
-import { SessionService } from '../auth/session.service.js'
-import { UserPermissionService } from '../user-permission/user-permission.service.js'
+import { EffectiveProfileService } from '../user-permission/effective-profile.service.js'
 import { ChatHistoryService } from './chat-history.service.js'
 import { ChatService } from './chat.service.js'
 
@@ -28,9 +25,7 @@ export class ChatController {
   constructor(
     @Inject(ChatService) private readonly chatService: ChatService,
     @Inject(ChatHistoryService) private readonly history: ChatHistoryService,
-    @Inject(SessionCookieService) private readonly cookies: SessionCookieService,
-    @Inject(SessionService) private readonly sessions: SessionService,
-    @Inject(UserPermissionService) private readonly perms: UserPermissionService,
+    @Inject(EffectiveProfileService) private readonly effective: EffectiveProfileService,
   ) {}
 
   /**
@@ -66,37 +61,22 @@ export class ChatController {
     if (!message) throw new BadRequestException('Missing `message`')
 
     // SessionGuard has already attached the session for non-public routes.
-    const session = (req as Request & { session?: Session }).session
-    const email = session?.username ?? null
+    const session = (req as Request & { session: Session }).session
 
-    // Belt-and-suspenders against a race where the FirstTimeSetup screen was
-    // bypassed: refuse to stream if the user's permission view hasn't been
-    // built yet. The unauthorized-codes filter would otherwise be empty,
-    // letting the chat surface documents the user can't actually access.
-    let unauthorizedCodes = new Set<string>()
-    if (email) {
-      const row = await this.perms.ensure(email)
-      if (row.firstSyncing) {
-        throw new ConflictException({
-          error: 'setup_in_progress',
-          message: 'Your library setup is still in progress. Please wait for it to finish.',
-        })
-      }
-      unauthorizedCodes = this.perms.parseUnauthorized(row)
-    }
+    // Resolve the effective (jobTitle, department) tuple — applies the fallback
+    // chain (user → default fallback → public-only) and triggers side effects
+    // (cold-start scan / weekly re-evaluation). See docs/role-based-access-plan.md §8.
+    const eff = await this.effective.resolve(session)
 
     const previous = await this.history.load(id)
     const messages: UIMessage[] = [...previous, message]
 
     const { result, originalMessages } = await this.chatService.streamReply(messages, {
-      unauthorizedCodes,
+      viewer: eff.publicOnly ? undefined : eff.viewer,
+      publicOnly: eff.publicOnly,
     })
 
     // ── Reader #1: background persistence ──
-    // Fire-and-forget. Iterates the UIMessage stream until the source
-    // completes (which it will, because this reader itself drives the source)
-    // then saves the final assistant message even if the HTTP response below
-    // was aborted halfway through.
     void (async () => {
       console.log(`[persist ${id}] starting`)
       let lastAssistantMessage: UIMessage | undefined
@@ -123,8 +103,6 @@ export class ChatController {
     })()
 
     // ── Reader #2: HTTP response pipe ──
-    // Independent of the persist task above. If the client disconnects,
-    // this reader gets cancelled; reader #1 keeps going.
     result.pipeUIMessageStreamToResponse(res, { originalMessages })
   }
 }

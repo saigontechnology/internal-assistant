@@ -15,15 +15,46 @@ export interface DocumentDescriptor {
   sharepointUrl?: string
 }
 
+export interface ViewerProfile {
+  jobTitle: string
+  department: string
+}
+
 export interface SimilaritySearchOptions {
   k?: number
   filenames?: string[]
   maxPerDoc?: number
+  /**
+   * When set, restricts results to docs where `sharepoint_code IS NULL` (public)
+   * OR the (viewer.jobTitle, viewer.department) tuple has an entry for the doc's
+   * code in `job_profile_access`. Omit for admin/unfiltered queries.
+   */
+  viewer?: ViewerProfile
+  /**
+   * When `viewer` is omitted AND this is true, restrict to public docs only.
+   * Used by the chat layer for the "neither user profile nor fallback profile
+   * is indexed yet" cold-start case.
+   */
+  publicOnly?: boolean
 }
 
 export interface SimilarityHit {
   content: string
   metadata: Record<string, unknown>
+}
+
+export interface SimilaritySearchResult {
+  hits: SimilarityHit[]
+  /**
+   * Number of distinct resources that ranked in the top semantic candidates
+   * for this query but were excluded by access control. Never surfaces any
+   * identifying detail (filenames/codes/titles) about the restricted docs —
+   * just the count, so the chat layer can tell the user "you don't have
+   * permission" without leaking what exists.
+   *
+   * Always 0 when access control is disabled (no viewer + !publicOnly).
+   */
+  restrictedCount: number
 }
 
 /**
@@ -97,8 +128,8 @@ export class EmbeddingsService {
     await this.prisma.resource.delete({ where: { id: docId } }).catch(() => {})
   }
 
-  async similaritySearch(query: string, opts: SimilaritySearchOptions = {}): Promise<SimilarityHit[]> {
-    const { k = 8, filenames, maxPerDoc = 3 } = opts
+  async similaritySearch(query: string, opts: SimilaritySearchOptions = {}): Promise<SimilaritySearchResult> {
+    const { k = 8, filenames, maxPerDoc = 3, viewer, publicOnly } = opts
     try {
       const queryEmbedding = await this.generateEmbedding(query)
       const vec = JSON.stringify(queryEmbedding)
@@ -108,6 +139,22 @@ export class EmbeddingsService {
       const filenameAnd =
         filenames && filenames.length > 0
           ? Prisma.sql`AND r.filename IN (${Prisma.join(filenames)})`
+          : Prisma.empty
+      // Access-control filter. `viewer` opens up the job_profile_access
+      // allow-list for that tuple; `publicOnly` restricts to docs with NULL
+      // sharepoint_code; omitting both is admin-mode (no gating).
+      const accessAnd = viewer
+        ? Prisma.sql`AND (
+            r.sharepoint_code IS NULL
+            OR EXISTS (
+              SELECT 1 FROM job_profile_access j
+              WHERE j.job_title = ${viewer.jobTitle}
+                AND j.department = ${viewer.department}
+                AND j.sharepoint_code = r.sharepoint_code
+            )
+          )`
+        : publicOnly
+          ? Prisma.sql`AND r.sharepoint_code IS NULL`
           : Prisma.empty
       // Pull a wider candidate pool than k so RRF has room to re-rank — and
       // so the per-doc cap below has alternatives when a single doc would
@@ -142,7 +189,7 @@ export class EmbeddingsService {
                  ROW_NUMBER() OVER (ORDER BY e.embedding <=> ${vec}::halfvec) AS rnk
           FROM embeddings e
           INNER JOIN resources r ON e.resource_id = r.id
-          WHERE 1=1 ${filenameAnd}
+          WHERE 1=1 ${filenameAnd} ${accessAnd}
           ORDER BY e.embedding <=> ${vec}::halfvec
           LIMIT ${fetchSize}
         ),
@@ -152,7 +199,7 @@ export class EmbeddingsService {
           FROM embeddings e
           INNER JOIN resources r ON e.resource_id = r.id
           CROSS JOIN q
-          WHERE e.content_tsv @@ q.tsq ${filenameAnd}
+          WHERE e.content_tsv @@ q.tsq ${filenameAnd} ${accessAnd}
           ORDER BY ts_rank_cd(e.content_tsv, q.tsq) DESC
           LIMIT ${fetchSize}
         ),
@@ -188,7 +235,7 @@ export class EmbeddingsService {
         picked.push(r)
         if (picked.length >= k) break
       }
-      return picked.map((r) => {
+      const hits: SimilarityHit[] = picked.map((r) => {
         const srcMd = r.source_metadata ?? {}
         // "Open in browser" URL — DocIdRedir for sharepoint-list rows
         // (in source_metadata.link_url), webUrl for manual imports
@@ -211,15 +258,60 @@ export class EmbeddingsService {
           },
         }
       })
+
+      // Count restricted top-N semantic candidates — i.e. resources that
+      // would have ranked high for this query but were excluded by ACL. The
+      // chat layer surfaces this as "you don't have permission to view N
+      // matching document(s)" WITHOUT naming them, so a user can tell when
+      // their query landed on something they're not entitled to read vs.
+      // a query that genuinely matches nothing.
+      let restrictedCount = 0
+      if (viewer || publicOnly) {
+        const restrictedAnd = viewer
+          ? Prisma.sql`AND r.sharepoint_code IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM job_profile_access j
+                WHERE j.job_title = ${viewer.jobTitle}
+                  AND j.department = ${viewer.department}
+                  AND j.sharepoint_code = r.sharepoint_code
+              )`
+          : Prisma.sql`AND r.sharepoint_code IS NOT NULL`
+        try {
+          const restrictedRows = await this.prisma.$queryRaw<{ n: number }[]>`
+            SELECT COUNT(DISTINCT r.id)::int AS n
+            FROM (
+              SELECT e.resource_id
+              FROM embeddings e
+              INNER JOIN resources r ON e.resource_id = r.id
+              WHERE 1=1 ${filenameAnd}
+              ORDER BY e.embedding <=> ${vec}::halfvec
+              LIMIT ${fetchSize}
+            ) cand
+            INNER JOIN resources r ON r.id = cand.resource_id
+            WHERE 1=1 ${restrictedAnd}
+          `
+          restrictedCount = restrictedRows[0]?.n ?? 0
+        } catch (err) {
+          // Non-fatal — fall through with restrictedCount = 0 so chat still
+          // responds. The allow-list query above already filtered the actual
+          // hits; this only feeds the "you don't have permission" surfacing.
+          console.warn('Restricted-count probe failed:', (err as Error).message)
+        }
+      }
+
+      return { hits, restrictedCount }
     } catch (err) {
       // Match legacy behavior: swallow + log so chat can still respond
       // without RAG context if the vector index is unavailable.
       console.warn('Similarity search failed:', (err as Error).message)
-      return []
+      return { hits: [], restrictedCount: 0 }
     }
   }
 
-  async listResourcesWithCounts(): Promise<DocumentInfo[]> {
+  async listResourcesWithCounts(opts: {
+    viewer?: ViewerProfile
+    publicOnly?: boolean
+  } = {}): Promise<DocumentInfo[]> {
     type Row = {
       id: string
       filename: string
@@ -234,6 +326,19 @@ export class EmbeddingsService {
       source_metadata: Record<string, unknown> | null
       chunk_count: number
     }
+    const accessAnd = opts.viewer
+      ? Prisma.sql`AND (
+          r.sharepoint_code IS NULL
+          OR EXISTS (
+            SELECT 1 FROM job_profile_access j
+            WHERE j.job_title = ${opts.viewer.jobTitle}
+              AND j.department = ${opts.viewer.department}
+              AND j.sharepoint_code = r.sharepoint_code
+          )
+        )`
+      : opts.publicOnly
+        ? Prisma.sql`AND r.sharepoint_code IS NULL`
+        : Prisma.empty
     const rows = await this.prisma.$queryRaw<Row[]>`
       SELECT r.id,
              r.filename,
@@ -249,6 +354,7 @@ export class EmbeddingsService {
              COUNT(e.id)::int AS chunk_count
       FROM resources r
       LEFT JOIN embeddings e ON e.resource_id = r.id
+      WHERE 1=1 ${accessAnd}
       GROUP BY r.id
       ORDER BY r.created_at DESC
     `

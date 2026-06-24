@@ -8,7 +8,10 @@ import {
 import { type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
-import { EmbeddingsService } from '../embeddings/embeddings.service.js'
+import {
+  EmbeddingsService,
+  type ViewerProfile,
+} from '../embeddings/embeddings.service.js'
 import { buildDocumentTools } from '../documents/document-tools.js'
 
 export const SYSTEM_PROMPT = `You are Alice, the Internal Assistant. You answer questions about the user's uploaded documents.
@@ -25,7 +28,11 @@ Citation rules:
   - When you cite a specific section or paragraph, hint at it in the link text or in parentheses afterwards, e.g. \`[QT-SDC.04 v03 — section 6.3](https://…)\`. Use the "Section:" field from the retrieval excerpt to ground the hint.
   - For PDFs, you MAY append \`#page=N\` to the URL only if the retrieval output explicitly says so. Do NOT invent page numbers.
 - If a retrieved excerpt has no URL, fall back to citing it as plain text \`(from <filename>)\` — never invent a URL.
-- Never use numeric indices like "Document 1" — always use the document's name/Code.`
+- Never use numeric indices like "Document 1" — always use the document's name/Code.
+
+Access control:
+- If retrieveResources returns a result starting with \`ACCESS_DENIED:\`, the matching documents exist but the user is not permitted to read them. Respond clearly that they don't have permission to view the matching document(s) for this query, and suggest contacting an administrator if they need access. Do NOT speculate about the documents' contents, do NOT guess their names, do NOT call retrieveResources again with variations trying to bypass it, and do NOT mention any filename, code, title, or URL — none were returned to you.
+- If retrieveResources returns excerpts followed by \`ACCESS_DENIED_PARTIAL:\`, answer normally from the excerpts you DID receive, and append one short line at the end of your reply telling the user that additional matching documents exist that they don't have permission to view. Do NOT name the restricted documents.`
 
 /**
  * Top-level chat agent. Owns the LLM client and the document tools
@@ -43,10 +50,8 @@ export class ChatService {
     this.openai = buildOpenAIClient(this.config)
   }
 
-  private buildTools(unauthorizedCodes: Set<string>) {
-    const { listDocumentsTool, retrieveResourcesTool } = buildDocumentTools(this.embeddings, {
-      unauthorizedCodes,
-    })
+  private buildTools(opts: { viewer?: ViewerProfile; publicOnly?: boolean }) {
+    const { listDocumentsTool, retrieveResourcesTool } = buildDocumentTools(this.embeddings, opts)
     return { listDocuments: listDocumentsTool, retrieveResources: retrieveResourcesTool }
   }
 
@@ -63,7 +68,7 @@ export class ChatService {
    */
   async streamReply(
     messages: UIMessage[],
-    opts: { unauthorizedCodes?: Set<string> } = {},
+    opts: { viewer?: ViewerProfile; publicOnly?: boolean } = {},
   ): Promise<{
     // Use `any` for the tool generic so TS doesn't need to resolve `typeof this`
     // in a return-type position (which errors with `strictThis`). The concrete
@@ -76,7 +81,7 @@ export class ChatService {
       model: this.openai.chat(this.config.chatModel),
       system: SYSTEM_PROMPT,
       messages: modelMessages,
-      tools: this.buildTools(opts.unauthorizedCodes ?? new Set()),
+      tools: this.buildTools(opts),
       stopWhen: stepCountIs(4),
     })
     return { result, originalMessages: messages }

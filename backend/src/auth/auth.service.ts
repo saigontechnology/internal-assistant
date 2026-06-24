@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express'
 import { AppConfig } from '../config/app-config.service.js'
+import { GraphMeService } from '../user-permission/graph-me.service.js'
+import { UserPermissionService } from '../user-permission/user-permission.service.js'
+import { LoginEventBus } from './login-event-bus.js'
 import { MsalService } from './msal.service.js'
 import { SessionCookieService } from './session-cookie.service.js'
 import { SessionService } from './session.service.js'
@@ -14,6 +17,9 @@ export class AuthService {
     private readonly msal: MsalService,
     private readonly sessions: SessionService,
     private readonly cookies: SessionCookieService,
+    private readonly graphMe: GraphMeService,
+    private readonly perms: UserPermissionService,
+    private readonly loginEvents: LoginEventBus,
   ) {}
 
   /** Returns the Microsoft auth-code URL to redirect to. */
@@ -50,6 +56,33 @@ export class AuthService {
         name: account.name ?? null,
       })
       this.cookies.setSession(res, id)
+
+      // Persist the user's job profile from Graph /me so the chat filter has
+      // it ready on the next request. Best-effort — a /me failure shouldn't
+      // block sign-in. The next authenticated request will read whatever's
+      // in user_permissions; an empty row falls back to the default profile.
+      const email = account.username
+      if (email) {
+        try {
+          const me = await this.graphMe.fetchWithToken(result.accessToken)
+          await this.perms.upsertProfile(email, me.jobTitle, me.department)
+        } catch (err) {
+          console.warn(
+            `[auth] /me lookup failed for ${email}:`,
+            (err as Error).message?.slice(0, 200),
+          )
+          // Make sure the row exists at least, so downstream code doesn't
+          // need to handle a missing row.
+          await this.perms.ensure(email).catch(() => {})
+        }
+      }
+
+      // Fire the post-login event so the per-profile sync starts NOW, not
+      // when the user opens chat. Listener lives in UserPermissionModule.
+      // Best-effort — listener errors are swallowed inside the bus.
+      const fresh = await this.sessions.get(id).catch(() => null)
+      if (fresh) this.loginEvents.emit(fresh)
+
       return this.config.frontendUrl
     } catch {
       return failUrl

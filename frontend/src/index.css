@@ -207,6 +207,7 @@
   }
   .prose-message a {
     @apply text-primary underline underline-offset-2 hover:text-primary/80;
+    overflow-wrap: anywhere;
   }
   .prose-message h1 {
     @apply text-xl font-semibold tracking-tight;

@@ -210,42 +210,21 @@ export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
  * open for the entire sync duration (~10 min on the full list). Callers should
  * give it a generous AbortSignal or just rely on the in-process lock.
  */
-// ─── Per-user permission / sync ───────────────────────────────────────
+// ─── User profile (job-title-based access) ────────────────────────────
 
-export interface UserPermissionStatus {
+export interface UserMe {
   email: string
-  firstSyncing: boolean
-  hasRecord: boolean
+  jobTitle: string
+  department: string
+  /** True iff the user's own job profile has been scanned at least once. */
+  profileIndexed: boolean
+  /** True when chat falls back to public-only (no allow-list applies yet). */
+  publicOnly: boolean
   lastSync: string | null
-  unauthorizedCount: number
-  syncing: boolean
 }
 
-export type UserSyncState = "idle" | "queued" | "running" | "done"
-
-export interface UserSyncStatus {
-  state: UserSyncState
-  yourPosition: number | null
-  queueLength: number
-  progressPercent: number
-  itemsSeen: number
-  itemsTotal: number | null
-  startedAt: string | null
-  lastError: string | null
-}
-
-export async function fetchUserPermission(): Promise<UserPermissionStatus> {
-  const res = await apiFetch("/api/user/permission")
-  return res.json()
-}
-
-export async function fetchUserSyncStatus(): Promise<UserSyncStatus> {
-  const res = await apiFetch("/api/user/sync/status")
-  return res.json()
-}
-
-export async function startUserSync(): Promise<{ status: "started" | "queued" | "already_present" }> {
-  const res = await apiFetch("/api/user/sync", { method: "POST" })
+export async function fetchUserMe(): Promise<UserMe> {
+  const res = await apiFetch("/api/user/me")
   return res.json()
 }
 

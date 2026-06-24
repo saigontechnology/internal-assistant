@@ -25,7 +25,7 @@ export function MessageList({ messages, status }: MessageListProps) {
             Internal Assistant · Reading Room
           </div>
 
-          <h2 className="mt-5 text-6xl leading-[0.95] font-light tracking-tight text-foreground sm:text-7xl">
+          <h2 className="mt-5 text-5xl leading-[0.95] font-light tracking-tight text-foreground sm:text-6xl md:text-7xl">
             Read between
             <br />
             <em className="font-normal text-primary italic">the lines.</em>
