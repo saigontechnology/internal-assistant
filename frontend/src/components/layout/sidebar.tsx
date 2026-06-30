@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { SyncPanel } from "@/components/documents/sync-panel"
-import { DocumentList } from "@/components/documents/document-list"
-import { fetchDocuments, deleteDocument, type DocumentInfo } from "@/lib/api"
+import { DistributionListsView } from "@/components/documents/distribution-lists-view"
 import { useConversations } from "@/lib/conversations"
 import { useAppView } from "@/lib/app-view"
 import {
@@ -119,9 +118,8 @@ function ConversationList() {
 
 export function Sidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("chats")
-  const [documents, setDocuments] = useState<DocumentInfo[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [showTabs, setShowTabs] = useState(false)
+  const [localRefresh, setLocalRefresh] = useState(0)
   const logoClicksRef = useRef<number[]>([])
   const { docsRefreshToken, isSidebarOpen, closeSidebar } = useAppView()
 
@@ -145,30 +143,7 @@ export function Sidebar() {
     }
   }
 
-  const loadDocuments = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      const docs = await fetchDocuments()
-      setDocuments(docs)
-    } catch {
-      // silently handle - documents panel will show empty state
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadDocuments()
-  }, [loadDocuments, docsRefreshToken])
-
-  const handleDelete = async (docId: string) => {
-    try {
-      await deleteDocument(docId)
-      setDocuments((prev) => prev.filter((d) => d.id !== docId))
-    } catch {
-      // could add toast here
-    }
-  }
+  const bumpRefresh = useCallback(() => setLocalRefresh((n) => n + 1), [])
 
   return (
     <aside
@@ -262,27 +237,17 @@ export function Sidebar() {
           <>
             <div className="flex items-center gap-2 px-4 py-4">
               <h2 className="label-eyebrow text-sidebar-foreground/60">Documents</h2>
-              <span className="ml-auto font-mono text-xs tabular-nums text-sidebar-foreground/50">
-                {String(documents.length).padStart(2, "0")} file
-                {documents.length !== 1 ? "s" : ""}
-              </span>
             </div>
             <Separator />
             {/* Three stacked regions:
-                  - SyncPanel (shrink-0, no scroll)
-                  - filter bar inside DocumentList (shrink-0, no scroll)
-                  - document list inside DocumentList (flex-1, owns scrollbar)
-                DocumentList manages the lower two so the filter bar and
-                the scroll zone never overlap. */}
+                  - SyncPanel (Layer 0 — overall stats + Sync button)
+                  - DistributionListsView Layer 1 (list of distribution lists)
+                  - DistributionListsView Layer 2 (per-list items, when one is selected) */}
             <div className="shrink-0 p-4 pb-3">
-              <SyncPanel onSyncComplete={loadDocuments} />
+              <SyncPanel onSyncComplete={bumpRefresh} />
             </div>
             <Separator />
-            <DocumentList
-              documents={documents}
-              isLoading={isLoading}
-              onDelete={handleDelete}
-            />
+            <DistributionListsView refreshKey={docsRefreshToken + localRefresh} />
           </>
         )}
         </div>

@@ -50,7 +50,12 @@ export class AppConfig {
   // ── SharePoint List watcher ──
   get sharepointHostname() { return this.raw.getOrThrow('SHAREPOINT_TENANT_HOSTNAME') }
   get sharepointSitePath() { return this.raw.getOrThrow('SHAREPOINT_SITE_PATH') }
-  get sharepointListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
+  /** Name of the registry list (case-insensitive match). */
+  get sharepointRegistryListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
+  /** Days of slop for incremental sync (0 = full sync). */
+  get sharepointRegistryIncrementalWindowDays(): number {
+    return this.raw.getOrThrow('SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS')
+  }
 
   // ── Per-user sync ──
   get userSyncIntervalDays(): number { return this.raw.getOrThrow('USER_SYNC_INTERVAL_DAYS') }

@@ -36,8 +36,16 @@ export const envSchema = z.object({
 
   // SharePoint List watcher (Phase A). Resolved at sync time and cached in-process.
   SHAREPOINT_TENANT_HOSTNAME: z.string().min(1).default('saigontechnology0.sharepoint.com'),
-  SHAREPOINT_SITE_PATH: z.string().min(1).default('/SDC/ISOSDC'),
-  SHAREPOINT_LIST_NAME: z.string().min(1).default('Danh mục total SDC'),
+  SHAREPOINT_SITE_PATH: z.string().min(1).default('/QA/ISOTEAM'),
+  // Name of the **registry list** that maps List Name → target list URL.
+  // Matched case-insensitively. Every row in the registry becomes one
+  // distribution_lists row, and its Link column dereferences to the actual
+  // SharePoint list we sync. See docs/multi-list-watcher-plan.md.
+  SHAREPOINT_LIST_NAME: z.string().min(1).default('Document Distribution List'),
+  // Optional. When > 0, target-list iteration adds an incremental filter
+  // on lastModifiedDateTime ≥ (last_synced_at - N days). 0 = full sync each
+  // run (current behavior). The window provides slop for clock skew.
+  SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS: z.coerce.number().int().min(0).default(0),
 
   // How many days between weekly resyncs. A logged-in user whose
   // user_permissions.lastSync AND their job_profile.lastSync are both older
