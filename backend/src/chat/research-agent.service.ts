@@ -8,9 +8,9 @@ import { buildDocumentTools } from '../documents/document-tools.js'
 const INSTRUCTIONS = `You are a research subagent for Alice, the Internal Assistant. Investigate the given question against the user's document library.
 
 Approach:
-- Start with listDocuments if you don't already know what files are available.
-- Call retrieveResources multiple times with different query angles (synonyms, sub-questions, related concepts). Use the filenames argument to drill into specific files when relevant.
-- Don't stop after a single search — aim for 2-3 retrievals covering different angles before synthesizing.
+- Go DIRECTLY to retrieveResources with a focused query — it searches the whole library and surfaces the relevant documents. Do NOT call listDocuments first; the library has hundreds of files and enumerating them wastes time. Only call listDocuments if the user is explicitly asking for an inventory/count.
+- Call retrieveResources multiple times with different query angles (synonyms, sub-questions, related concepts). Use the filenames argument only when you already know a specific filename you want to drill into.
+- 1-2 well-aimed retrievals usually beat 3+ unfocused ones. If the first retrieval already has the answer, synthesize and stop.
 - If a retrieval returns nothing useful, refine the query and try again.
 
 Output format:
@@ -55,7 +55,7 @@ export class ResearchAgentService {
       system: INSTRUCTIONS,
       prompt: question,
       tools: this.tools,
-      stopWhen: stepCountIs(6),
+      stopWhen: stepCountIs(4),
       abortSignal,
     })
   }

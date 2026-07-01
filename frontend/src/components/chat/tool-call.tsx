@@ -125,7 +125,11 @@ function SubStepLine({ part }: { part: NestedPart }) {
 
 function SubagentBody({ message }: { message: NestedMessage }) {
   const parts = message.parts ?? []
-  const subSteps = parts.filter((p) => p.type.startsWith("tool-"))
+  const subSteps = parts.filter(
+    (p) =>
+      p.type.startsWith("tool-") &&
+      p.type.replace(/^tool-/, "") !== "listDocuments",
+  )
   const finalText = parts
     .filter((p) => p.type === "text" && typeof p.text === "string")
     .map((p) => p.text as string)
@@ -152,6 +156,9 @@ export function ToolCall({ part }: ToolCallProps) {
   const [manuallyCollapsed, setManuallyCollapsed] = useState<boolean | null>(
     null
   )
+  // listDocuments returns a noisy inventory the user shouldn't see surfaced
+  // as a step. The agent uses it internally for routing; we skip the UI row.
+  if (part.type.replace(/^tool-/, "") === "listDocuments") return null
   const view = getView(part)
   const Icon = view.icon
   const isError = part.state === "output-error"

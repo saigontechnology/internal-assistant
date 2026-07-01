@@ -119,7 +119,7 @@ function ActiveChat({
             disabled={!isActive && !input.trim()}
             onClick={isActive ? () => stop() : undefined}
             aria-label={isActive ? "Stop generating" : "Send"}
-            className="absolute top-1/2 right-2 size-8 -translate-y-1/2 rounded-[0.4rem]"
+            className="absolute inset-y-0 right-2 my-auto size-8 rounded-[0.4rem] active:translate-y-0"
           >
             {isActive ? <Pause /> : <ArrowUp />}
           </Button>

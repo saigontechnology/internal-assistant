@@ -16,6 +16,26 @@ function getFileType(filename: string): string {
   return i >= 0 ? filename.slice(i + 1).toLowerCase() : 'unknown'
 }
 
+/**
+ * One-line label prepended to every chunk before embedding. Keeps a
+ * mid-document chunk self-describing — the embedding picks up the doc's
+ * identity, and a retrieved chunk shown to the LLM already announces what it
+ * came from. Keep this short (<= ~100 chars) so it doesn't dominate small
+ * chunks.
+ */
+function buildChunkHeader(parts: {
+  filename: string
+  fileType: string
+  title?: string
+  code?: string
+}): string {
+  const bits = [`Document: ${parts.filename}`]
+  if (parts.title && parts.title !== parts.filename) bits.push(`Title: ${parts.title}`)
+  if (parts.code) bits.push(`Code: ${parts.code}`)
+  bits.push(`Type: ${parts.fileType}`)
+  return `[${bits.join(' | ')}]`
+}
+
 /** Outcome reported back to the watcher for counter bookkeeping. */
 export type SharepointUpsertOutcome =
   | { kind: 'ingested'; chunkCount: number }   // new SP row, file ingested
@@ -59,10 +79,17 @@ export class DocumentsService {
       throw new Error(`Unsupported file type: ${filename}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX`)
     }
     const parsed = await this.parsers.parseBuffer(buffer, filename)
-    const chunks = splitText(parsed.content, parsed.metadata, this.config.chunkSize, this.config.chunkOverlap)
+    const fileType = getFileType(filename)
+    const chunks = splitText(
+      parsed.content,
+      parsed.metadata,
+      this.config.chunkSize,
+      this.config.chunkOverlap,
+      buildChunkHeader({ filename, fileType }),
+    )
     const docId = randomUUID().replace(/-/g, '').slice(0, 12)
     const chunkCount = await this.embeddings.addDocument(
-      { id: docId, filename, fileType: getFileType(filename), source: 'upload' },
+      { id: docId, filename, fileType, source: 'upload' },
       chunks,
     )
     return { id: docId, filename, chunkCount, message: 'Document uploaded and indexed successfully' }
@@ -78,18 +105,20 @@ export class DocumentsService {
 
     const buffer = await this.sharepoint.downloadFile(accessToken, fileRef.driveId, fileRef.itemId)
     const parsed = await this.parsers.parseBuffer(buffer, filename)
+    const fileType = getFileType(filename)
     const chunks = splitText(
       parsed.content,
       { ...parsed.metadata, sharepoint_item_id: fileRef.itemId },
       this.config.chunkSize,
       this.config.chunkOverlap,
+      buildChunkHeader({ filename, fileType }),
     )
     const docId = randomUUID().replace(/-/g, '').slice(0, 12)
     const chunkCount = await this.embeddings.addDocument(
       {
         id: docId,
         filename,
-        fileType: getFileType(filename),
+        fileType,
         source: 'sharepoint',
         sharepointUrl: parsed.metadata.sharepoint_url,
       },
@@ -108,13 +137,7 @@ export class DocumentsService {
 
   // ── SharePoint-list watcher entry point ────────────────────────────
 
-  /**
-   * Cheap pre-check the watcher calls after `resolveByCode` succeeds and
-   * before downloading the file. Avoids a per-row Graph download when we'd
-   * just take the Case 1 skip path in `upsertFromSharepointList` anyway.
-   * Also bumps `lastSyncAttempt` and clears any stale `pendingVersion` so
-   * a sync from a user with access acts as a fresh confirmation.
-   */
+  /** @deprecated unused — watcher now pre-fetches DB state at sync start. */
   async isAlreadySyncedAtVersion(
     listId: string,
     code: string,
@@ -270,6 +293,8 @@ export class DocumentsService {
     }
 
     const parsed = await this.parsers.parseBuffer(args.file.buffer, args.file.filename)
+    const fileType = getFileType(args.file.filename)
+    const md = args.sourceMetadata as Record<string, unknown>
     const chunks = splitText(
       { ...parsed }.content,
       {
@@ -280,6 +305,12 @@ export class DocumentsService {
       },
       this.config.chunkSize,
       this.config.chunkOverlap,
+      buildChunkHeader({
+        filename: args.file.filename,
+        fileType,
+        title: typeof md.title === 'string' ? md.title : args.title,
+        code: args.code,
+      }),
     )
 
     // Generate embeddings BEFORE opening the transaction so the tx is short.
@@ -298,7 +329,7 @@ export class DocumentsService {
         data: {
           id: newResourceId,
           filename: args.file!.filename,
-          fileType: getFileType(args.file!.filename),
+          fileType,
           source: 'sharepoint-list',
           sharepointListId: args.listId,
           sharepointCode: args.code,

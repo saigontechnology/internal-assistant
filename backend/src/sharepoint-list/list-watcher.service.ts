@@ -79,6 +79,29 @@ export class ListWatcherService {
 
       const liveCodes = new Set<string>()
 
+      // Pre-fetch existing DB state for this list so the per-row loop can skip
+      // unchanged rows WITHOUT calling Graph Search / Graph Download. The 375-
+      // row list runs in seconds with this; cold sync still has to resolve and
+      // download everything, but the warm case is now bounded by network +
+      // list pagination, not by 375 × (search + download).
+      const existing = await this.prisma.resource.findMany({
+        where: { sharepointListId: listId, sharepointCode: { not: null } },
+        select: { sharepointCode: true, sharepointVersion: true, syncStatus: true },
+      })
+      const existingByCode = new Map<
+        string,
+        { version: string | null; status: string }
+      >()
+      for (const r of existing) {
+        if (r.sharepointCode) {
+          existingByCode.set(r.sharepointCode, {
+            version: r.sharepointVersion,
+            status: r.syncStatus,
+          })
+        }
+      }
+      const skippedCodes: string[] = []
+
       for await (const row of this.listSvc.iterateItems(tokens)) {
         counters.seen++
         const f = (row.fields ?? {}) as Record<string, unknown>
@@ -103,6 +126,17 @@ export class ListWatcherService {
         }
         liveCodes.add(code)
 
+        // Warm-path short-circuit. If this (code, version) is already 'synced'
+        // in our DB, the file hasn't changed since last sync — skip the Graph
+        // round-trips entirely. Pending/failed rows fall through and retry,
+        // since this user may have access where the last caller didn't.
+        const prior = existingByCode.get(code)
+        if (prior && prior.status === 'synced' && prior.version === version) {
+          counters.skipped++
+          skippedCodes.push(code)
+          continue
+        }
+
         const sourceMetadata: Record<string, unknown> = {
           title, code, version,
           date: trim(f.Date),
@@ -126,12 +160,6 @@ export class ListWatcherService {
                 status: 'pending_access',
                 error: 'predicted-filename search returned no matching driveItem',
               })
-            } else if (await this.documents.isAlreadySyncedAtVersion(listId, code, version)) {
-              // Save a Graph download: another caller already synced this exact
-              // (code, version). Case 1 in upsertFromSharepointList would skip
-              // anyway after parsing/embedding nothing, but we'd still pay the
-              // bytes. Short-circuit here.
-              outcome = { kind: 'skipped' }
             } else {
               const buffer = await this.listSvc.downloadFile(tokens, resolved)
               outcome = await this.documents.upsertFromSharepointList({
@@ -152,6 +180,16 @@ export class ListWatcherService {
             })
           } catch { /* ignore — already counted as failed */ }
         }
+      }
+
+      // Bookkeeping on warm-path skips — a single batched UPDATE bumps
+      // lastSyncAttempt and clears any stale pendingVersion. Much cheaper
+      // than ~370 per-row updates from the inner loop.
+      if (skippedCodes.length > 0) {
+        await this.prisma.resource.updateMany({
+          where: { sharepointListId: listId, sharepointCode: { in: skippedCodes } },
+          data: { lastSyncAttempt: new Date(), sharepointPendingVersion: null },
+        })
       }
 
       // Reconcile — anything in DB but no longer in the live list disappears.

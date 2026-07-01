@@ -98,28 +98,123 @@ export class SharepointListService {
     const stem = buildPredictedStem(args)
     const normStem = normalizeForMatch(stem)
     const normCode = normalizeForMatch(args.code)
+    const codeRegex = buildCodeTokenRegex(args.code)
+    const versionRegex = buildVersionRegex(args.version)
+    const bumpedVersion = bumpVersion(args.version)
+    const bumpedVersionRegex = bumpedVersion ? buildVersionRegex(bumpedVersion) : null
+
+    // Placeholder codes (e.g. "n/a (Orchard)", "N/A") carry no identifier we
+    // can match against the filename — the real signal lives in the Title
+    // column instead. Detect those and route through title-only matching.
+    const isPlaceholderCode = /^\s*n\s*\/?\s*a\b/i.test(args.code)
+    const titleTokens = buildTitleTokens(args.title)
+    // Anything inside `(…)` in the code field is treated as a secondary hint
+    // ("n/a (Orchard)" → "orchard"). Boosts title-overlap score when present
+    // in the filename — helps disambiguate same-title files across offices.
+    const parensHint = (args.code.match(/\(([^)]+)\)/)?.[1] ?? '')
+      .trim()
+      .toLowerCase()
+
+    // Pick the best candidate from a result set. Tiers in priority order:
+    //   1. startsWith(predicted stem)    — perfect prefix; only when title also matches
+    //   2. code AND version present       — handles title divergence (e.g. filename
+    //                                       drops "Hướng dẫn" prefix the list has)
+    //   3. code AND bumped-version        — list Ver lags behind actual file (01 → 02)
+    //   4. code only                      — last resort; risks picking wrong version
+    //                                       if multiple version siblings exist
+    //   5. title-overlap score ≥ 0.7      — handles placeholder codes; also a final
+    //                                       safety net when the code isn't in the
+    //                                       filename at all
+    const pickBest = (hits: SearchHit[]): SearchHit | undefined => {
+      const named = hits.filter((h) => h.resource?.name)
+      const norm = (h: SearchHit) => normalizeForMatch(h.resource!.name!)
+
+      // Code-based tiers — skipped entirely for placeholder codes since the
+      // code itself is meaningless ("n/a (Orchard)" isn't in any filename).
+      if (!isPlaceholderCode) {
+        const codeMatches = named.filter(
+          (h) => codeRegex.test(norm(h)) || norm(h).includes(normCode),
+        )
+        const codeHit =
+          named.find((h) => norm(h).startsWith(normStem)) ??
+          (versionRegex
+            ? codeMatches.find((h) => versionRegex.test(norm(h)))
+            : undefined) ??
+          (bumpedVersionRegex
+            ? codeMatches.find((h) => bumpedVersionRegex.test(norm(h)))
+            : undefined) ??
+          codeMatches[0]
+        if (codeHit) return codeHit
+      }
+
+      // Title-overlap tier. Requires ≥3 title tokens so the score is meaningful.
+      if (titleTokens.length >= 3) {
+        let best: { hit: SearchHit | undefined; score: number } = {
+          hit: undefined,
+          score: 0,
+        }
+        for (const h of named) {
+          let score = titleOverlapScore(norm(h), titleTokens)
+          if (parensHint && norm(h).includes(parensHint)) score += 0.3
+          if (score > best.score) best = { hit: h, score }
+        }
+        if (best.score >= 0.7) return best.hit
+      }
+
+      return undefined
+    }
 
     // Shot 1 — strict quoted-phrase search on the full predicted stem.
-    // Cheap and unambiguous when SP Search's tokenizer cooperates.
-    let items = await this.searchDriveItems(tokens, `"${stem}"`, 5)
-    let matched = items.find((h) =>
-      normalizeForMatch(h.resource?.name ?? '').startsWith(normStem),
-    )
+    // Skipped for placeholder codes (the stem is "n a (Orchard) - …", noise).
+    let items: SearchHit[] = []
+    let matched: SearchHit | undefined
+    if (!isPlaceholderCode) {
+      items = await this.searchDriveItems(tokens, `"${stem}"`, 5)
+      matched = pickBest(items)
+    }
 
-    // Shot 2 — codes containing `.` (e.g. "QT-HR.13") often zero-hit the
-    // quoted-phrase search because SP Search tokenizes on the period.
-    // Re-query with just the code, unquoted, and pick the best hit whose
-    // filename contains the code AND looks like our predicted stem.
-    if (!matched?.resource) {
+    // Shot 2 — codes containing `.` (e.g. "QT-HR.13", "HD-HR.00.20") often
+    // zero-hit the quoted-phrase search because SP Search tokenizes on the
+    // period. Re-query with just the code unquoted; pickBest handles the
+    // version disambiguation (e.g. picks v02 over v01 archive sibling) and
+    // the title divergence cases (filename drops "Hướng dẫn" prefix that
+    // the list Title carries). Skipped for placeholder codes.
+    if (!matched?.resource && !isPlaceholderCode) {
       const fallback = await this.searchDriveItems(tokens, args.code, 25)
-      matched =
-        fallback.find((h) =>
-          normalizeForMatch(h.resource?.name ?? '').startsWith(normStem),
-        ) ??
-        fallback.find((h) =>
-          normalizeForMatch(h.resource?.name ?? '').includes(normCode),
-        )
+      matched = pickBest(fallback)
       if (matched) items = fallback
+    }
+
+    // Shot 3 — full title as a quoted phrase. Hits when the file's name
+    // contains the entire list Title verbatim. Gated to ≥3 tokens so the
+    // phrase is discriminating enough.
+    const titleWords = args.title.trim().split(/\s+/)
+    if (!matched?.resource && titleWords.length >= 3) {
+      const titleHits = await this.searchDriveItems(tokens, `"${args.title.trim()}"`, 25)
+      matched = pickBest(titleHits)
+      if (matched) items = titleHits
+    }
+
+    // Shot 4 — first 4 title tokens quoted. Handles files whose names
+    // contain only the *leading* portion of the list Title (e.g. list says
+    // "Sơ đồ chỗ ngồi - văn phòng Orchard", file is named "Orchard - Sơ
+    // đồ chỗ ngồi" — the leading 4 tokens appear in the file, but the full
+    // phrase doesn't). Skipped when the full title already fit in shot 3.
+    if (!matched?.resource && titleWords.length > 4) {
+      const firstFour = titleWords.slice(0, 4).join(' ')
+      const partialHits = await this.searchDriveItems(tokens, `"${firstFour}"`, 25)
+      matched = pickBest(partialHits)
+      if (matched) items = partialHits
+    }
+
+    // Shot 5 — parens hint, unquoted. Last resort for placeholder codes
+    // where the real identifier lives inside `(…)`. For "n/a (Orchard)"
+    // we search "Orchard" and let the title-overlap scorer disambiguate
+    // among the returned hits.
+    if (!matched?.resource && parensHint) {
+      const hintHits = await this.searchDriveItems(tokens, parensHint, 25)
+      matched = pickBest(hintHits)
+      if (matched) items = hintHits
     }
 
     if (!matched?.resource) {
@@ -146,7 +241,7 @@ export class SharepointListService {
     tokens: GraphTokenProvider,
     queryString: string,
     size: number,
-  ): Promise<SearchResponse['value'][number]['hitsContainers'][number]['hits']> {
+  ): Promise<SearchHit[]> {
     const res = await this.graphPost<SearchResponse>(tokens, '/search/query', {
       requests: [
         {
@@ -221,21 +316,115 @@ export function normalizeForMatch(s: string): string {
   return s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Tokenize a title for overlap scoring. Splits on any non-letter/non-digit
+ * run (preserving Vietnamese diacritics via the Unicode property escapes),
+ * lowercases, and keeps tokens with ≥2 characters that contain at least
+ * one letter. Pure-numeric tokens are dropped — they match too freely
+ * against years, version numbers, dates baked into filenames.
+ */
+export function buildTitleTokens(title: string): string[] {
+  return title
+    .normalize('NFC')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2 && /\p{L}/u.test(t))
+}
+
+/**
+ * Fraction of title tokens present (as substrings) in the candidate
+ * filename. Returns 0..1. Used as the last-resort tier in pickBest for
+ * rows where the code can't be matched against the filename (placeholder
+ * codes like "n/a (Orchard)", or files whose names diverge wildly from
+ * the listed Code).
+ */
+export function titleOverlapScore(filename: string, titleTokens: string[]): number {
+  if (titleTokens.length === 0) return 0
+  let present = 0
+  for (const t of titleTokens) {
+    if (filename.includes(t)) present++
+  }
+  return present / titleTokens.length
+}
+
+/**
+ * Build a regex that matches the version segment of a filename. Accepts any
+ * `v<digits>` whose integer value equals the version's leading integer,
+ * regardless of zero-padding. So `"02"` matches `v2`, `v02`, `v002` — but
+ * NOT `v20` or `v21` (right-anchored to a non-digit or end-of-string).
+ *
+ * Returns null when the version has no integer (defensive — every list row
+ * in practice has a numeric Ver, but the column type is string).
+ */
+export function buildVersionRegex(version: string): RegExp | null {
+  const m = version.match(/(\d+)/)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return new RegExp(`v0*${n}(?!\\d)`, 'i')
+}
+
+/**
+ * Increment the first integer run in a version string by 1, preserving
+ * zero-pad width. Returns null when the version has no integer at all.
+ *
+ *   "01"   → "02"
+ *   "09"   → "10"      (width preserved, no truncation when value overflows)
+ *   "1"    → "2"
+ *   "1.0"  → "2.0"     (only the leading integer is bumped)
+ *   "v3"   → "v4"
+ *   ""     → null
+ *   "abc"  → null
+ */
+export function bumpVersion(version: string): string | null {
+  const m = version.match(/(\d+)/)
+  if (!m) return null
+  const n = m[1]
+  const next = (parseInt(n, 10) + 1).toString().padStart(n.length, '0')
+  return version.slice(0, m.index!) + next + version.slice(m.index! + n.length)
+}
+
+/**
+ * Build a tolerant regex from a code like "HD-HR.00.20": splits on any
+ * non-alphanumeric run and accepts any non-alnum separator between the
+ * resulting tokens in the candidate string. Handles SharePoint filenames
+ * that flattened dots to hyphens/underscores at upload time.
+ *
+ * Operates against `normalizeForMatch`-ed input (lowercased, NFC, single-
+ * spaced), so tokens are already lower-case.
+ */
+export function buildCodeTokenRegex(code: string): RegExp {
+  const tokens = code
+    .normalize('NFC')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+  if (tokens.length === 0) return /(?!)/ // never matches
+  const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  // (^|non-alnum) before the first token, (non-alnum|$) after the last,
+  // non-alnum between tokens — anchors so we don't accept "hd" in "shdr".
+  return new RegExp(
+    `(^|[^a-z0-9])${escaped.join('[^a-z0-9]+')}([^a-z0-9]|$)`,
+    'i',
+  )
+}
+
 // Minimal shape of /search/query response — typed locally so we don't drag in
 // the @microsoft/microsoft-graph-types union of every possible entity.
 interface SearchResponse {
   value: {
     hitsContainers: {
-      hits: {
-        resource?: {
-          id?: string
-          name?: string
-          eTag?: string
-          size?: number
-          webUrl?: string
-          parentReference?: { driveId?: string }
-        }
-      }[]
+      hits: SearchHit[]
     }[]
   }[]
+}
+
+interface SearchHit {
+  resource?: {
+    id?: string
+    name?: string
+    eTag?: string
+    size?: number
+    webUrl?: string
+    parentReference?: { driveId?: string }
+  }
 }
