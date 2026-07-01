@@ -23,6 +23,12 @@ export interface DocumentInfo {
   /** Source list row identity (sharepoint-list only). */
   sharepointCode?: string
   sharepointVersion?: string
+  /**
+   * Set when the source list shows a newer Ver than `sharepointVersion`
+   * and no caller has been able to resolve it yet. Embeddings still reflect
+   * `sharepointVersion`; UI should warn that a fresher copy exists.
+   */
+  sharepointPendingVersion?: string
   /** Title / Distribution from the source list — handy for display. */
   title?: string
   distribution?: string

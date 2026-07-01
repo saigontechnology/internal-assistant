@@ -8,6 +8,7 @@ import { MsalService } from './msal.service.js'
 import { SessionCookieService } from './session-cookie.service.js'
 import { SessionGuard } from './session.guard.js'
 import { SessionService } from './session.service.js'
+import { SyncAllowlistService } from './sync-allowlist.service.js'
 
 /**
  * Wires the auth surface. All services are factory-provided (no constructor
@@ -46,7 +47,12 @@ import { SessionService } from './session.service.js'
         new SessionGuard(r, c, s),
     },
     { provide: APP_GUARD, useExisting: SessionGuard },
+    {
+      provide: SyncAllowlistService,
+      inject: [PrismaService],
+      useFactory: (p: PrismaService) => new SyncAllowlistService(p),
+    },
   ],
-  exports: [SessionService, SessionCookieService, MsalService],
+  exports: [SessionService, SessionCookieService, MsalService, SyncAllowlistService],
 })
 export class AuthModule {}

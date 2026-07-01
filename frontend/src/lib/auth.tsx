@@ -10,6 +10,8 @@ import {
 export interface AuthUser {
   username: string | null
   name: string | null
+  /** True when the user's email is in the server-side sync_allowlist table. */
+  isAllowedToSync: boolean
 }
 
 interface AuthContextValue {
@@ -31,7 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await fetch("/api/auth/me")
       const data = await res.json()
-      setUser(data.authenticated ? data.user : null)
+      setUser(
+        data.authenticated
+          ? { isAllowedToSync: false, ...data.user }
+          : null,
+      )
     } catch {
       setUser(null)
     } finally {

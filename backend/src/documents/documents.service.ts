@@ -109,6 +109,46 @@ export class DocumentsService {
   // ── SharePoint-list watcher entry point ────────────────────────────
 
   /**
+   * Cheap pre-check the watcher calls after `resolveByCode` succeeds and
+   * before downloading the file. Avoids a per-row Graph download when we'd
+   * just take the Case 1 skip path in `upsertFromSharepointList` anyway.
+   * Also bumps `lastSyncAttempt` and clears any stale `pendingVersion` so
+   * a sync from a user with access acts as a fresh confirmation.
+   */
+  async isAlreadySyncedAtVersion(
+    listId: string,
+    code: string,
+    version: string,
+  ): Promise<boolean> {
+    const existing = await this.prisma.resource.findUnique({
+      where: { sp_code_uk: { sharepointListId: listId, sharepointCode: code } },
+      select: {
+        id: true,
+        sharepointVersion: true,
+        sharepointPendingVersion: true,
+        syncStatus: true,
+      },
+    })
+    if (
+      !existing ||
+      existing.syncStatus !== 'synced' ||
+      existing.sharepointVersion !== version
+    ) {
+      return false
+    }
+    await this.prisma.resource.update({
+      where: { id: existing.id },
+      data: {
+        lastSyncAttempt: new Date(),
+        sharepointPendingVersion:
+          existing.sharepointPendingVersion !== null ? null : undefined,
+      },
+    })
+    return true
+  }
+
+
+  /**
    * Atomic per-row upsert used by the list watcher. Handles four cases in
    * one call so the watcher's main loop stays linear:
    *
@@ -126,7 +166,12 @@ export class DocumentsService {
     const now = new Date()
     const existing = await this.prisma.resource.findUnique({
       where: { sp_code_uk: { sharepointListId: args.listId, sharepointCode: args.code } },
-      select: { id: true, sharepointVersion: true, syncStatus: true },
+      select: {
+        id: true,
+        sharepointVersion: true,
+        sharepointPendingVersion: true,
+        syncStatus: true,
+      },
     })
 
     // Case 1: nothing to do.
@@ -142,6 +187,27 @@ export class DocumentsService {
     // Cases 3/4: metadata-only upsert — no file, no embeddings.
     if (!args.file) {
       const status = args.status ?? 'pending_access'
+
+      // Never downgrade a row that some other caller already synced.
+      // Strategy H is per-user, so a user without access to this file would
+      // otherwise wipe a previously-ingested resource's embeddings on every
+      // sync. Keep what's there; let a future call from someone with access
+      // refresh it. If the source list shows a newer Ver than what we have,
+      // record it on `sharepoint_pending_version` so the UI can warn that
+      // embeddings are stale.
+      if (existing && existing.syncStatus === 'synced') {
+        const pendingVersion =
+          existing.sharepointVersion !== args.version ? args.version : null
+        await this.prisma.resource.update({
+          where: { id: existing.id },
+          data: {
+            lastSyncAttempt: now,
+            sharepointPendingVersion: pendingVersion,
+          },
+        })
+        return { kind: 'skipped' }
+      }
+
       if (
         existing &&
         existing.sharepointVersion === args.version &&

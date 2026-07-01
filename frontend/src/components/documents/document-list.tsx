@@ -8,6 +8,7 @@ import {
   Clock,
   AlertCircle,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -63,6 +64,7 @@ export function DocumentList({
     for (const d of documents) {
       counts[classify(d.syncStatus ?? "synced")]++;
     }
+    // eslint-disable-next-line no-useless-assignment
     let visible = documents;
     if (filter === "all") {
       // Stable sort by status weight (synced → pending → failed) so the
@@ -221,6 +223,27 @@ export function DocumentList({
                       v{doc.sharepointVersion}
                     </Badge>
                   )}
+                  {doc.sharepointPendingVersion &&
+                    doc.sharepointPendingVersion !== doc.sharepointVersion && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="outline"
+                            className="cursor-help gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs"
+                          >
+                            <RefreshCw className="size-3" />
+                            v{doc.sharepointPendingVersion} pending
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          A newer version (v{doc.sharepointPendingVersion}) is
+                          listed in SharePoint, but no signed-in user has been
+                          able to fetch it yet. Search results still use
+                          v{doc.sharepointVersion}. Ask someone with access to
+                          this file to run a sync.
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   {!isSpListRow && (
                     <Badge variant="secondary" className="text-xs">
                       {doc.fileType.toUpperCase()}
