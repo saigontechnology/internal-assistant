@@ -29,36 +29,115 @@ export interface SyncCounters {
   failed: number
 }
 
+export interface SyncRunTotals extends SyncCounters {
+  registryRows: number
+  distributionListsResolved: number
+  distributionListsUnresolved: number
+  distributionListsOrphaned: number
+}
+
+export interface PerListSummary {
+  distributionListId: string
+  displayName: string
+  targetListId: string | null
+  status: "ok" | "partial" | "error" | "unresolvable"
+  counters: SyncCounters
+  itemErrors: { code?: string; rowId?: string; error: string }[]
+  fatalError?: string
+}
+
 export interface SyncRun {
-  listId: string
   triggeredBy: "manual" | "cron"
   startedAt: string
   finishedAt: string
   durationMs: number
   status: "ok" | "partial" | "error"
-  counters: SyncCounters
-  itemErrors: { code?: string; rowId?: string; error: string }[]
+  totals: SyncRunTotals
+  lists: PerListSummary[]
   fatalError?: string
+}
+
+export interface WatcherStateRow {
+  listId: string
+  lastRunAt: string | null
+  lastStatus: string
+  lastError: string | null
+  itemsSeen: number
+  itemsIngested: number
+  itemsUpdated: number
+  itemsSkipped: number
+  itemsPending: number
+  itemsRemoved: number
+  itemsFailed: number
 }
 
 export interface SyncStatusResponse {
   running: boolean
   currentStartedAt: string | null
   lastRun: SyncRun | null
-  persistedState: {
-    listId: string
-    lastRunAt: string | null
-    lastStatus: string
-    lastError: string | null
-    itemsSeen: number
-    itemsIngested: number
-    itemsUpdated: number
-    itemsSkipped: number
-    itemsPending: number
-    itemsRemoved: number
-    itemsFailed: number
-  } | null
+  persistedState: WatcherStateRow[]
   indexState: Record<SyncStatus, number>
+}
+
+// ─── Distribution lists (registry-driven) ─────────────────────────────
+
+export interface DistributionListSummary {
+  id: string
+  displayName: string
+  note: string | null
+  listUrl: string
+  lastSyncedAt: string | null
+  lastSyncStatus: string
+  lastSyncError: string | null
+  counters: {
+    synced: number
+    pending: number
+    failed: number
+    removed: number
+  }
+}
+
+export interface DistributionListDetail extends DistributionListSummary {
+  registryListId: string
+  registryItemId: string
+  siteId: string | null
+  targetListId: string | null
+  itemsSynced: number
+  itemsPending: number
+  itemsFailed: number
+  itemsRemoved: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DistributionListItem {
+  id: string
+  distributionListId: string
+  resourceId: string | null
+  sharepointCode: string
+  sharepointTitle: string
+  sharepointVersion: string
+  lastSeenAt: string
+  syncStatus: SyncStatus | string
+  syncError: string | null
+}
+
+export async function fetchDistributionLists(): Promise<DistributionListSummary[]> {
+  const res = await apiFetch("/api/distribution-lists")
+  const data = await res.json()
+  return data.lists
+}
+
+export async function fetchDistributionListItems(
+  id: string,
+  opts: { cursor?: string; take?: number } = {},
+): Promise<{ items: DistributionListItem[]; nextCursor: string | null }> {
+  const params = new URLSearchParams()
+  if (opts.cursor) params.set("cursor", opts.cursor)
+  if (opts.take) params.set("take", String(opts.take))
+  const qs = params.toString()
+  const res = await apiFetch(`/api/distribution-lists/${id}/items${qs ? `?${qs}` : ""}`)
+  return res.json()
 }
 
 export interface SharePointSite {

@@ -4,13 +4,15 @@ import { AppConfig } from '../config/app-config.service.js'
 import { DocumentsModule } from '../documents/documents.module.js'
 import { DocumentsService } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { DistributionListController } from './distribution-list.controller.js'
+import { DistributionListService } from './distribution-list.service.js'
 import { ListWatcherService } from './list-watcher.service.js'
 import { SharepointListService } from './sharepoint-list.service.js'
 import { SyncController } from './sync.controller.js'
 
 @Module({
   imports: [AuthModule, DocumentsModule],
-  controllers: [SyncController],
+  controllers: [SyncController, DistributionListController],
   providers: [
     {
       provide: SharepointListService,
@@ -18,12 +20,22 @@ import { SyncController } from './sync.controller.js'
       useFactory: (c: AppConfig) => new SharepointListService(c),
     },
     {
+      provide: DistributionListService,
+      inject: [PrismaService],
+      useFactory: (p: PrismaService) => new DistributionListService(p),
+    },
+    {
       provide: ListWatcherService,
-      inject: [PrismaService, SharepointListService, DocumentsService],
-      useFactory: (p: PrismaService, s: SharepointListService, d: DocumentsService) =>
-        new ListWatcherService(p, s, d),
+      inject: [PrismaService, SharepointListService, DocumentsService, DistributionListService, AppConfig],
+      useFactory: (
+        p: PrismaService,
+        s: SharepointListService,
+        d: DocumentsService,
+        dl: DistributionListService,
+        c: AppConfig,
+      ) => new ListWatcherService(p, s, d, dl, c),
     },
   ],
-  exports: [SharepointListService, ListWatcherService],
+  exports: [SharepointListService, ListWatcherService, DistributionListService],
 })
 export class SharepointListModule {}

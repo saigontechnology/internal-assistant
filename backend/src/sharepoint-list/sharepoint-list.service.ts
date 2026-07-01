@@ -3,14 +3,17 @@ import { GraphTokenProvider } from './graph-token-provider.js'
 
 /**
  * Talks to the Microsoft Graph endpoints the watcher needs:
- *   - resolve the configured list to a (siteId, listId) tuple (cached in-process)
- *   - paginate all items with $expand=fields
- *   - resolve a list row to a driveItem via Strategy H (predicted filename)
+ *   - resolve the configured SITE_PATH to a siteId (cached in-process)
+ *   - find the registry list ("Document Distribution List") and read its rows
+ *   - dereference each registry row's Link to a (siteId, listId) target
+ *   - paginate target-list items with $expand=fields
+ *   - resolve a list row to a driveItem via Strategy H
  *   - download driveItem content
  *
- * All methods take a `GraphTokenProvider` rather than a raw token so the
- * provider can refresh tokens mid-sync if needed (Graph tokens last ~1h;
- * a full 375-row sync should fit well inside that, but we don't assume it).
+ * Cross-site links are followed: registry rows can point to lists outside
+ * SHAREPOINT_SITE_PATH (the registry IS the trust boundary).
+ *
+ * See docs/multi-list-watcher-plan.md.
  */
 
 export interface ListRow {
@@ -29,50 +32,200 @@ export interface ResolvedDriveItem {
   webUrl?: string
 }
 
+/** One row in the registry list. */
+export interface RegistryRow {
+  /** Graph list-item id within the registry list. */
+  registryItemId: string
+  /** "List Name" — from the registry row's Title column. */
+  displayName: string
+  /** Raw URL from the row's Link hyperlink column. */
+  listUrl: string
+  /** Optional Note column text. */
+  note: string | null
+}
+
+export interface RegistryResolveResult {
+  /** Graph listId of the registry list itself. */
+  registryListId: string
+  rows: RegistryRow[]
+}
+
+/** Successful dereference of a registry row's Link URL. */
+export interface ResolvedTargetList {
+  siteId: string
+  listId: string
+  /** Hostname extracted from the URL, for diagnostics. */
+  hostname: string
+  /** SharePoint list displayName as it lives on the target site. */
+  displayName: string
+}
+
+interface GraphList {
+  id: string
+  displayName: string
+  webUrl?: string
+  list?: {
+    template?: string
+    hidden?: boolean
+  }
+}
+
 export class SharepointListService {
-  /** Resolved once and cached for the lifetime of this service instance. */
-  private locationCache: { siteId: string; listId: string } | null = null
+  /** siteId for the configured SITE_PATH (the registry's home site). */
+  private siteCache: { siteId: string } | null = null
+  /** Memoized siteId per hostname:path so cross-site lookups don't repeat. */
+  private readonly siteByPath = new Map<string, string>()
+  /** Memoized listId per (siteId, displayName) so we don't paginate lists twice. */
+  private readonly listByName = new Map<string, string>()
 
   constructor(private readonly config: AppConfig) {}
 
-  /** Reset the (siteId, listId) cache. Useful when the list name changes. */
+  /** Reset every cache. */
   resetCache(): void {
-    this.locationCache = null
+    this.siteCache = null
+    this.siteByPath.clear()
+    this.listByName.clear()
   }
 
-  // ── Public methods ────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────
 
-  /** Resolve and cache the (siteId, listId) for the configured list. */
-  async resolveLocation(tokens: GraphTokenProvider): Promise<{ siteId: string; listId: string }> {
-    if (this.locationCache) return this.locationCache
+  /** Resolve and cache the siteId for the configured site path. */
+  async resolveSite(tokens: GraphTokenProvider): Promise<{ siteId: string }> {
+    if (this.siteCache) return this.siteCache
     const cfg = this.config
-    const site = await this.graphGet<{ id: string }>(
-      tokens,
-      `/sites/${cfg.sharepointHostname}:${cfg.sharepointSitePath}`,
-    )
-    const lists = await this.graphGet<{ value: { id: string; displayName: string }[] }>(
-      tokens,
-      `/sites/${site.id}/lists?$filter=${encodeURIComponent(`displayName eq '${cfg.sharepointListName}'`)}`,
-    )
-    const list = lists.value[0]
-    if (!list) {
-      throw new Error(
-        `SharePoint list "${cfg.sharepointListName}" not found at site ${cfg.sharepointSitePath}`,
-      )
-    }
-    this.locationCache = { siteId: site.id, listId: list.id }
-    return this.locationCache
+    console.log(`[sharepoint-list] resolving siteId for ${cfg.sharepointHostname}:${cfg.sharepointSitePath}...`,)
+    const siteId = await this.lookupSite(tokens, cfg.sharepointHostname, cfg.sharepointSitePath)
+    this.siteCache = { siteId }
+    return this.siteCache
   }
 
   /**
-   * Iterate every row in the list, following @odata.nextLink. Yields rows in
-   * batches so callers can stream them into the DB without buffering all 375
-   * rows in memory.
+   * Find the registry list under SITE_PATH and read every row. The registry
+   * name is matched case-insensitively against `displayName`.
+   *
+   * Throws when the registry list isn't found (a fatal config error — we
+   * can't do anything useful without it).
    */
-  async *iterateItems(tokens: GraphTokenProvider): AsyncGenerator<ListRow, void, void> {
-    const { siteId, listId } = await this.resolveLocation(tokens)
+  async resolveRegistry(tokens: GraphTokenProvider): Promise<RegistryResolveResult> {
+    const { siteId } = await this.resolveSite(tokens)
+    const wantedName = this.config.sharepointRegistryListName.toLowerCase()
+
+    const all = await this.fetchAllLists(tokens, siteId)
+    console.log(`[sharepoint-list] discovered lists at site ${siteId}:`, all.map((l) => l.displayName))
+    const registry = all.find((l) => l.displayName.toLowerCase() === wantedName)
+    console.log('[sharepoint-list] found registry list:', registry)
+    if (!registry) {
+      throw new Error(
+        `Registry list "${this.config.sharepointRegistryListName}" not found at site ` +
+          `${this.config.sharepointSitePath}. Discovered: ${all.map((l) => l.displayName).join(', ')}`,
+      )
+    }
+
+    const rows: RegistryRow[] = []
+    let rowsSeen = 0
+    for await (const row of this.iterateItems(tokens, registry.id)) {
+      rowsSeen++
+      const parsed = parseRegistryRow(row)
+      if (parsed) {
+        rows.push(parsed)
+      } else {
+        // The most common reason this branch fires: the registry row's
+        // columns have internal names we didn't guess. Log the raw field
+        // keys + sample values so we can broaden parseRegistryRow.
+        const f = (row.fields ?? {}) as Record<string, unknown>
+        console.warn('[sharepoint-list] registry row parse miss', {
+          rowId: row.id,
+          fieldKeys: Object.keys(f),
+          sample: Object.fromEntries(
+            Object.entries(f).slice(0, 20).map(([k, v]) => [
+              k,
+              typeof v === 'string' ? v.slice(0, 120) : v,
+            ]),
+          ),
+        })
+      }
+    }
+    console.log(
+      `[sharepoint-list] registry "${registry.displayName}" → seen=${rowsSeen} parsed=${rows.length}`,
+    )
+    return { registryListId: registry.id, rows }
+  }
+
+  /**
+   * Dereference a registry row's Link URL to a (siteId, listId) target.
+   * Returns null when the URL is malformed, the site can't be reached, or
+   * the list isn't visible to the caller. The caller turns that null into
+   * `last_sync_status='unresolvable'` on the distribution_lists row.
+   */
+  async resolveTargetList(
+    tokens: GraphTokenProvider,
+    listUrl: string,
+  ): Promise<ResolvedTargetList | null> {
+    const parsed = parseSharepointListUrl(listUrl)
+    if (!parsed) return null
+    const { hostname, sitePath, listName } = parsed
+
+    try {
+      const siteId = await this.lookupSite(tokens, hostname, sitePath)
+      const listId = await this.lookupListByName(tokens, siteId, listName)
+      if (!listId) return null
+      return { siteId, listId, hostname, displayName: listName }
+    } catch (err) {
+      console.warn(
+        `[sharepoint-list] resolveTargetList failed for "${listUrl}":`,
+        (err as Error).message?.slice(0, 200),
+      )
+      return null
+    }
+  }
+
+  /**
+   * Iterate every row in the given list. Yields rows in pages of 200.
+   * When `modifiedSince` is provided, adds `$filter=lastModifiedDateTime ge ...`
+   * for the incremental sync path.
+   */
+  async *iterateItems(
+    tokens: GraphTokenProvider,
+    listId: string,
+    opts: { modifiedSince?: Date } = {},
+  ): AsyncGenerator<ListRow, void, void> {
+    const { siteId } = await this.resolveSite(tokens)
     type Page = { value: ListRow[]; '@odata.nextLink'?: string }
-    let next: string | null = `/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=200`
+
+    const query = new URLSearchParams()
+    query.set('$expand', 'fields')
+    query.set('$top', '200')
+    if (opts.modifiedSince) {
+      query.set('$filter', `lastModifiedDateTime ge ${opts.modifiedSince.toISOString()}`)
+    }
+    let next: string | null = `/sites/${siteId}/lists/${listId}/items?${query.toString()}`
+    while (next) {
+      const page: Page = await this.graphGet<Page>(tokens, next)
+      for (const row of page.value ?? []) yield row
+      next = page['@odata.nextLink']
+        ? page['@odata.nextLink'].replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, '')
+        : null
+    }
+  }
+
+  /**
+   * Variant of iterateItems that uses an explicit (siteId, listId) pair —
+   * needed for cross-site target lists discovered via the registry.
+   */
+  async *iterateItemsAt(
+    tokens: GraphTokenProvider,
+    siteId: string,
+    listId: string,
+    opts: { modifiedSince?: Date } = {},
+  ): AsyncGenerator<ListRow, void, void> {
+    type Page = { value: ListRow[]; '@odata.nextLink'?: string }
+    const query = new URLSearchParams()
+    query.set('$expand', 'fields')
+    query.set('$top', '200')
+    if (opts.modifiedSince) {
+      query.set('$filter', `lastModifiedDateTime ge ${opts.modifiedSince.toISOString()}`)
+    }
+    let next: string | null = `/sites/${siteId}/lists/${listId}/items?${query.toString()}`
     while (next) {
       const page: Page = await this.graphGet<Page>(tokens, next)
       for (const row of page.value ?? []) yield row
@@ -87,9 +240,8 @@ export class SharepointListService {
    * predicted filename `<Code> - <Title> - v<Ver>` and pick the top hit whose
    * actual name matches the stem prefix.
    *
-   * Returns null when:
-   *   - search returns 0 hits (file invisible to this identity OR doesn't exist)
-   *   - top hits exist but none start with the predicted stem (ambiguous)
+   * Graph `/search/query` for `driveItem` is tenant-scoped (not list-scoped),
+   * so this works the same regardless of which target list the row came from.
    */
   async resolveByCode(
     tokens: GraphTokenProvider,
@@ -103,56 +255,28 @@ export class SharepointListService {
     const bumpedVersion = bumpVersion(args.version)
     const bumpedVersionRegex = bumpedVersion ? buildVersionRegex(bumpedVersion) : null
 
-    // Placeholder codes (e.g. "n/a (Orchard)", "N/A") carry no identifier we
-    // can match against the filename — the real signal lives in the Title
-    // column instead. Detect those and route through title-only matching.
     const isPlaceholderCode = /^\s*n\s*\/?\s*a\b/i.test(args.code)
     const titleTokens = buildTitleTokens(args.title)
-    // Anything inside `(…)` in the code field is treated as a secondary hint
-    // ("n/a (Orchard)" → "orchard"). Boosts title-overlap score when present
-    // in the filename — helps disambiguate same-title files across offices.
-    const parensHint = (args.code.match(/\(([^)]+)\)/)?.[1] ?? '')
-      .trim()
-      .toLowerCase()
+    const parensHint = (args.code.match(/\(([^)]+)\)/)?.[1] ?? '').trim().toLowerCase()
 
-    // Pick the best candidate from a result set. Tiers in priority order:
-    //   1. startsWith(predicted stem)    — perfect prefix; only when title also matches
-    //   2. code AND version present       — handles title divergence (e.g. filename
-    //                                       drops "Hướng dẫn" prefix the list has)
-    //   3. code AND bumped-version        — list Ver lags behind actual file (01 → 02)
-    //   4. code only                      — last resort; risks picking wrong version
-    //                                       if multiple version siblings exist
-    //   5. title-overlap score ≥ 0.7      — handles placeholder codes; also a final
-    //                                       safety net when the code isn't in the
-    //                                       filename at all
     const pickBest = (hits: SearchHit[]): SearchHit | undefined => {
       const named = hits.filter((h) => h.resource?.name)
       const norm = (h: SearchHit) => normalizeForMatch(h.resource!.name!)
 
-      // Code-based tiers — skipped entirely for placeholder codes since the
-      // code itself is meaningless ("n/a (Orchard)" isn't in any filename).
       if (!isPlaceholderCode) {
         const codeMatches = named.filter(
           (h) => codeRegex.test(norm(h)) || norm(h).includes(normCode),
         )
         const codeHit =
           named.find((h) => norm(h).startsWith(normStem)) ??
-          (versionRegex
-            ? codeMatches.find((h) => versionRegex.test(norm(h)))
-            : undefined) ??
-          (bumpedVersionRegex
-            ? codeMatches.find((h) => bumpedVersionRegex.test(norm(h)))
-            : undefined) ??
+          (versionRegex ? codeMatches.find((h) => versionRegex.test(norm(h))) : undefined) ??
+          (bumpedVersionRegex ? codeMatches.find((h) => bumpedVersionRegex.test(norm(h))) : undefined) ??
           codeMatches[0]
         if (codeHit) return codeHit
       }
 
-      // Title-overlap tier. Requires ≥3 title tokens so the score is meaningful.
       if (titleTokens.length >= 3) {
-        let best: { hit: SearchHit | undefined; score: number } = {
-          hit: undefined,
-          score: 0,
-        }
+        let best: { hit: SearchHit | undefined; score: number } = { hit: undefined, score: 0 }
         for (const h of named) {
           let score = titleOverlapScore(norm(h), titleTokens)
           if (parensHint && norm(h).includes(parensHint)) score += 0.3
@@ -164,8 +288,6 @@ export class SharepointListService {
       return undefined
     }
 
-    // Shot 1 — strict quoted-phrase search on the full predicted stem.
-    // Skipped for placeholder codes (the stem is "n a (Orchard) - …", noise).
     let items: SearchHit[] = []
     let matched: SearchHit | undefined
     if (!isPlaceholderCode) {
@@ -173,21 +295,12 @@ export class SharepointListService {
       matched = pickBest(items)
     }
 
-    // Shot 2 — codes containing `.` (e.g. "QT-HR.13", "HD-HR.00.20") often
-    // zero-hit the quoted-phrase search because SP Search tokenizes on the
-    // period. Re-query with just the code unquoted; pickBest handles the
-    // version disambiguation (e.g. picks v02 over v01 archive sibling) and
-    // the title divergence cases (filename drops "Hướng dẫn" prefix that
-    // the list Title carries). Skipped for placeholder codes.
     if (!matched?.resource && !isPlaceholderCode) {
       const fallback = await this.searchDriveItems(tokens, args.code, 25)
       matched = pickBest(fallback)
       if (matched) items = fallback
     }
 
-    // Shot 3 — full title as a quoted phrase. Hits when the file's name
-    // contains the entire list Title verbatim. Gated to ≥3 tokens so the
-    // phrase is discriminating enough.
     const titleWords = args.title.trim().split(/\s+/)
     if (!matched?.resource && titleWords.length >= 3) {
       const titleHits = await this.searchDriveItems(tokens, `"${args.title.trim()}"`, 25)
@@ -195,11 +308,6 @@ export class SharepointListService {
       if (matched) items = titleHits
     }
 
-    // Shot 4 — first 4 title tokens quoted. Handles files whose names
-    // contain only the *leading* portion of the list Title (e.g. list says
-    // "Sơ đồ chỗ ngồi - văn phòng Orchard", file is named "Orchard - Sơ
-    // đồ chỗ ngồi" — the leading 4 tokens appear in the file, but the full
-    // phrase doesn't). Skipped when the full title already fit in shot 3.
     if (!matched?.resource && titleWords.length > 4) {
       const firstFour = titleWords.slice(0, 4).join(' ')
       const partialHits = await this.searchDriveItems(tokens, `"${firstFour}"`, 25)
@@ -207,10 +315,6 @@ export class SharepointListService {
       if (matched) items = partialHits
     }
 
-    // Shot 5 — parens hint, unquoted. Last resort for placeholder codes
-    // where the real identifier lives inside `(…)`. For "n/a (Orchard)"
-    // we search "Orchard" and let the title-overlap scorer disambiguate
-    // among the returned hits.
     if (!matched?.resource && parensHint) {
       const hintHits = await this.searchDriveItems(tokens, parensHint, 25)
       matched = pickBest(hintHits)
@@ -218,9 +322,6 @@ export class SharepointListService {
     }
 
     if (!matched?.resource) {
-      // Diagnostic: when Strategy H misses, print the predicted stem and the
-      // top hit names so we can see whether the file was returned at all and,
-      // if so, exactly how the actual name diverges from our prefix.
       console.warn('[Strategy H miss]', {
         code: args.code,
         title: args.title,
@@ -247,9 +348,6 @@ export class SharepointListService {
         {
           entityTypes: ['driveItem'],
           query: { queryString },
-          // `id` MUST be explicit — Graph Search only returns selected fields.
-          // Omitting it caused every row to look like a 'pending_access' miss
-          // because resolveByCode's null-check on r.id fired.
           fields: ['id', 'name', 'parentReference', 'eTag', 'size', 'webUrl'],
           from: 0,
           size,
@@ -273,6 +371,83 @@ export class SharepointListService {
   }
 
   // ── Internals ─────────────────────────────────────────────────────
+
+  /** Resolve a (hostname, server-relative-path) pair to a Graph siteId. */
+  private async lookupSite(
+    tokens: GraphTokenProvider,
+    hostname: string,
+    sitePath: string,
+  ): Promise<string> {
+    const key = `${hostname.toLowerCase()}::${sitePath.toLowerCase()}`
+    const cached = this.siteByPath.get(key)
+    if (cached) return cached
+    const path = sitePath.startsWith('/') ? sitePath : `/${sitePath}`
+    const site = await this.graphGet<{ id: string }>(tokens, `/sites/${hostname}:${path}`)
+    this.siteByPath.set(key, site.id)
+    return site.id
+  }
+
+  /**
+   * Resolve a list to its Graph listId on the given site.
+   *
+   * `urlName` is the URL-name slug extracted from the registry row's Link
+   * (the segment after `/Lists/`). SharePoint lists have two names —
+   *   - displayName: current UI label, can have diacritics ("Danh mục total SDC")
+   *   - URL-name: the name the list was created with, used in the webUrl
+   *     path. SharePoint strips diacritics here ("Danh mc total SDC").
+   * The registry's Link column always carries the URL-name, so we match
+   * each list's `webUrl` against it. We still fall back to a displayName
+   * match in case the list was created with diacritics intact.
+   */
+  private async lookupListByName(
+    tokens: GraphTokenProvider,
+    siteId: string,
+    urlName: string,
+  ): Promise<string | null> {
+    const key = `${siteId}::${urlName.toLowerCase()}`
+    const cached = this.listByName.get(key)
+    if (cached) return cached
+
+    const all = await this.fetchAllLists(tokens, siteId)
+    const target = urlName.toLowerCase()
+
+    const byUrl = all.find((l) => {
+      if (!l.webUrl) return false
+      const seg = extractListSegmentFromWebUrl(l.webUrl)
+      return seg !== null && seg.toLowerCase() === target
+    })
+    if (byUrl) {
+      this.listByName.set(key, byUrl.id)
+      return byUrl.id
+    }
+
+    const byDisplay = all.find((l) => l.displayName.toLowerCase() === target)
+    if (byDisplay) {
+      this.listByName.set(key, byDisplay.id)
+      return byDisplay.id
+    }
+
+    console.warn(
+      `[sharepoint-list] no list matched URL-name "${urlName}" on site ${siteId}. ` +
+        `Considered: ${all.map((l) => `${l.displayName} (webUrl=${l.webUrl ?? 'n/a'})`).join('; ')}`,
+    )
+    return null
+  }
+
+  /** Page through `/sites/{id}/lists`, returning raw list metadata. */
+  private async fetchAllLists(tokens: GraphTokenProvider, siteId: string): Promise<GraphList[]> {
+    type Page = { value: GraphList[]; '@odata.nextLink'?: string }
+    const out: GraphList[] = []
+    let next: string | null = `/sites/${siteId}/lists?$select=id,displayName,webUrl,list&$top=200`
+    while (next) {
+      const page: Page = await this.graphGet<Page>(tokens, next)
+      for (const l of page.value ?? []) out.push(l)
+      next = page['@odata.nextLink']
+        ? page['@odata.nextLink'].replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, '')
+        : null
+    }
+    return out
+  }
 
   private async graphGet<T>(tokens: GraphTokenProvider, path: string): Promise<T> {
     const token = await tokens.getToken()
@@ -300,12 +475,144 @@ export class SharepointListService {
   }
 }
 
+// ── Registry-row parsing ─────────────────────────────────────────────
+
+/**
+ * Read one registry row (Graph list-item) into our internal RegistryRow shape.
+ *
+ * Defensive about column casing/aliases:
+ *   - List Name comes from `Title` or `List_x0020_Name` or `ListName`.
+ *   - Link is a SharePoint hyperlink → `{ Url, Description }` object.
+ *   - Note is plain text under `Note`, `Notes`, `Note0`, or `Description`.
+ */
+function parseRegistryRow(row: ListRow): RegistryRow | null {
+  const f = (row.fields ?? {}) as Record<string, unknown>
+
+  // First try known keys; if a hit, great. Otherwise scan all keys for the
+  // *shape* we expect — any hyperlink-typed value becomes the listUrl, any
+  // long text value not yet claimed becomes the note. Defensive against
+  // SharePoint's "we'll pick a weird internal name" tendency on custom
+  // columns (e.g. "List_x0020_Name", "Link0", "Notes1").
+  const displayName =
+    pickString(f, ['Title', 'List_x0020_Name', 'ListName', 'List Name', 'LinkTitle', 'LinkTitleNoMenu']) ||
+    scanFirstNonEmptyString(f, ['Link', 'URL', 'Url', 'Note', 'Notes', 'Description', 'id', '_UIVersionString'])
+
+  const listUrl =
+    pickHyperlinkUrl(f, ['Link', 'URL', 'Url']) ||
+    scanFirstHyperlinkUrl(f, ['Title'])
+
+  const note =
+    pickString(f, ['Note', 'Notes', 'Note0', 'Description', 'Note_x0020_', 'Body']) ||
+    null
+
+  if (!displayName || !listUrl) return null
+  return {
+    registryItemId: row.id,
+    displayName: displayName.trim(),
+    listUrl: listUrl.trim(),
+    note,
+  }
+}
+
+function pickString(f: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = f[k]
+    if (typeof v === 'string' && v.length > 0) return v
+  }
+  return ''
+}
+
+function pickHyperlinkUrl(f: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = f[k]
+    if (typeof v === 'string' && v.length > 0 && /^https?:\/\//i.test(v)) return v
+    if (typeof v === 'object' && v && 'Url' in (v as object)) {
+      const url = (v as { Url?: unknown }).Url
+      if (typeof url === 'string' && url.length > 0) return url
+    }
+  }
+  return ''
+}
+
+/** Walk every field looking for the first non-empty string outside `skip`. */
+function scanFirstNonEmptyString(f: Record<string, unknown>, skip: string[]): string {
+  const skipSet = new Set(skip)
+  for (const [k, v] of Object.entries(f)) {
+    if (skipSet.has(k) || k.startsWith('@')) continue
+    if (typeof v === 'string' && v.length > 0 && !/^https?:\/\//i.test(v)) return v
+  }
+  return ''
+}
+
+/** Walk every field looking for the first SharePoint hyperlink object (or http(s) string). */
+function scanFirstHyperlinkUrl(f: Record<string, unknown>, skip: string[]): string {
+  const skipSet = new Set(skip)
+  for (const [k, v] of Object.entries(f)) {
+    if (skipSet.has(k) || k.startsWith('@')) continue
+    if (typeof v === 'string' && /^https?:\/\//i.test(v)) return v
+    if (typeof v === 'object' && v && 'Url' in (v as object)) {
+      const url = (v as { Url?: unknown }).Url
+      if (typeof url === 'string' && url.length > 0) return url
+    }
+  }
+  return ''
+}
+
+/**
+ * Pull the `/Lists/<name>` segment out of a SharePoint list webUrl. Returns
+ * the URL-decoded segment, or null if the URL doesn't contain `/Lists/`.
+ */
+function extractListSegmentFromWebUrl(webUrl: string): string | null {
+  try {
+    const u = new URL(webUrl)
+    const segs = u.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const i = segs.findIndex((s) => s.toLowerCase() === 'lists')
+    if (i === -1 || i + 1 >= segs.length) return null
+    return segs[i + 1]
+  } catch {
+    return null
+  }
+}
+
+// ── URL parsing (exported for testing) ───────────────────────────────
+
+/**
+ * Parse a SharePoint list URL into the pieces we need to call Graph.
+ *
+ * Expected shape:
+ *   https://<host>/<site-path>/Lists/<list-name>[/AllItems.aspx][?...]
+ *
+ *   → hostname = "<host>" (lower-cased)
+ *   → sitePath = "/<site-path>"   (server-relative; leading slash kept)
+ *   → listName = "<list-name>"    (URL-decoded)
+ *
+ * Returns null when the URL doesn't contain a `/Lists/<name>` segment or
+ * the host is missing.
+ */
+export function parseSharepointListUrl(raw: string): {
+  hostname: string
+  sitePath: string
+  listName: string
+} | null {
+  let u: URL
+  try { u = new URL(raw) } catch { return null }
+  const hostname = u.hostname.toLowerCase()
+  if (!hostname) return null
+
+  const segments = u.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+  // Find the "Lists" segment (case-insensitive) and the next segment as listName.
+  const listsIdx = segments.findIndex((s) => s.toLowerCase() === 'lists')
+  if (listsIdx === -1 || listsIdx + 1 >= segments.length) return null
+  const listName = segments[listsIdx + 1]
+  if (!listName) return null
+
+  const sitePath = '/' + segments.slice(0, listsIdx).join('/')
+  return { hostname, sitePath: sitePath === '/' ? '' : sitePath, listName }
+}
+
 // ── Helpers (exported for testing) ───────────────────────────────────
 
 export function buildPredictedStem(args: { code: string; title: string; version: string }): string {
-  // `Code` can contain path-y characters (e.g. "PL01/QT-COM.03"); strip them so
-  // the filename match isn't confused by a `/` that doesn't exist in the actual
-  // file name on disk.
   const code = args.code.replace(/[/\\]/g, ' ').trim()
   const title = args.title.trim()
   const version = String(args.version).trim()
@@ -316,13 +623,6 @@ export function normalizeForMatch(s: string): string {
   return s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
-/**
- * Tokenize a title for overlap scoring. Splits on any non-letter/non-digit
- * run (preserving Vietnamese diacritics via the Unicode property escapes),
- * lowercases, and keeps tokens with ≥2 characters that contain at least
- * one letter. Pure-numeric tokens are dropped — they match too freely
- * against years, version numbers, dates baked into filenames.
- */
 export function buildTitleTokens(title: string): string[] {
   return title
     .normalize('NFC')
@@ -331,13 +631,6 @@ export function buildTitleTokens(title: string): string[] {
     .filter((t) => t.length >= 2 && /\p{L}/u.test(t))
 }
 
-/**
- * Fraction of title tokens present (as substrings) in the candidate
- * filename. Returns 0..1. Used as the last-resort tier in pickBest for
- * rows where the code can't be matched against the filename (placeholder
- * codes like "n/a (Orchard)", or files whose names diverge wildly from
- * the listed Code).
- */
 export function titleOverlapScore(filename: string, titleTokens: string[]): number {
   if (titleTokens.length === 0) return 0
   let present = 0
@@ -347,15 +640,6 @@ export function titleOverlapScore(filename: string, titleTokens: string[]): numb
   return present / titleTokens.length
 }
 
-/**
- * Build a regex that matches the version segment of a filename. Accepts any
- * `v<digits>` whose integer value equals the version's leading integer,
- * regardless of zero-padding. So `"02"` matches `v2`, `v02`, `v002` — but
- * NOT `v20` or `v21` (right-anchored to a non-digit or end-of-string).
- *
- * Returns null when the version has no integer (defensive — every list row
- * in practice has a numeric Ver, but the column type is string).
- */
 export function buildVersionRegex(version: string): RegExp | null {
   const m = version.match(/(\d+)/)
   if (!m) return null
@@ -363,18 +647,6 @@ export function buildVersionRegex(version: string): RegExp | null {
   return new RegExp(`v0*${n}(?!\\d)`, 'i')
 }
 
-/**
- * Increment the first integer run in a version string by 1, preserving
- * zero-pad width. Returns null when the version has no integer at all.
- *
- *   "01"   → "02"
- *   "09"   → "10"      (width preserved, no truncation when value overflows)
- *   "1"    → "2"
- *   "1.0"  → "2.0"     (only the leading integer is bumped)
- *   "v3"   → "v4"
- *   ""     → null
- *   "abc"  → null
- */
 export function bumpVersion(version: string): string | null {
   const m = version.match(/(\d+)/)
   if (!m) return null
@@ -383,33 +655,17 @@ export function bumpVersion(version: string): string | null {
   return version.slice(0, m.index!) + next + version.slice(m.index! + n.length)
 }
 
-/**
- * Build a tolerant regex from a code like "HD-HR.00.20": splits on any
- * non-alphanumeric run and accepts any non-alnum separator between the
- * resulting tokens in the candidate string. Handles SharePoint filenames
- * that flattened dots to hyphens/underscores at upload time.
- *
- * Operates against `normalizeForMatch`-ed input (lowercased, NFC, single-
- * spaced), so tokens are already lower-case.
- */
 export function buildCodeTokenRegex(code: string): RegExp {
   const tokens = code
     .normalize('NFC')
     .toLowerCase()
     .split(/[^a-z0-9]+/i)
     .filter(Boolean)
-  if (tokens.length === 0) return /(?!)/ // never matches
+  if (tokens.length === 0) return /(?!)/
   const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  // (^|non-alnum) before the first token, (non-alnum|$) after the last,
-  // non-alnum between tokens — anchors so we don't accept "hd" in "shdr".
-  return new RegExp(
-    `(^|[^a-z0-9])${escaped.join('[^a-z0-9]+')}([^a-z0-9]|$)`,
-    'i',
-  )
+  return new RegExp(`(^|[^a-z0-9])${escaped.join('[^a-z0-9]+')}([^a-z0-9]|$)`, 'i')
 }
 
-// Minimal shape of /search/query response — typed locally so we don't drag in
-// the @microsoft/microsoft-graph-types union of every possible entity.
 interface SearchResponse {
   value: {
     hitsContainers: {

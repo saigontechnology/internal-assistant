@@ -125,7 +125,11 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
 
   const indexState = status?.indexState
   const lastRun = status?.lastRun
-  const persisted = status?.persistedState
+  // persistedState is now an array (one row per target list). The summary
+  // panel just wants the most-recent completion timestamp.
+  const newestPersisted = (status?.persistedState ?? [])
+    .filter((r) => r.lastRunAt)
+    .sort((a, b) => (b.lastRunAt! > a.lastRunAt! ? 1 : -1))[0] ?? null
 
   const total = indexState
     ? indexState.synced + indexState.pending_access + indexState.failed_parse + indexState.failed_resolve
@@ -135,11 +139,11 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
     <div className="dark flex flex-col gap-3 text-foreground">
       <div className="rounded-lg border border-border bg-card/50 p-3">
         <div className="mb-2 flex items-center justify-between">
-          <span className="label-eyebrow text-muted-foreground">SharePoint List</span>
-          {persisted?.lastRunAt && (
+          <span className="label-eyebrow text-muted-foreground">Distribution lists</span>
+          {newestPersisted?.lastRunAt && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="size-3" />
-              {formatRelative(persisted.lastRunAt)}
+              {formatRelative(newestPersisted.lastRunAt)}
             </span>
           )}
         </div>
@@ -242,11 +246,11 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
             <span>· {formatDuration(lastRun.durationMs)}</span>
           </div>
           <div className="mt-1 text-[11px] leading-snug">
-            {lastRun.counters.ingested + lastRun.counters.updated} ingested
+            {lastRun.totals.distributionListsResolved} lists · {lastRun.totals.ingested + lastRun.totals.updated} ingested
             {" · "}
-            {lastRun.counters.skipped} unchanged
-            {lastRun.counters.failed > 0 && <> · <span className="text-destructive">{lastRun.counters.failed} failed</span></>}
-            {lastRun.counters.removed > 0 && <> · {lastRun.counters.removed} removed</>}
+            {lastRun.totals.skipped} unchanged
+            {lastRun.totals.failed > 0 && <> · <span className="text-destructive">{lastRun.totals.failed} failed</span></>}
+            {lastRun.totals.removed > 0 && <> · {lastRun.totals.removed} removed</>}
           </div>
           {lastRun.fatalError && (
             <p className="mt-1 truncate text-[11px] text-destructive" title={lastRun.fatalError}>

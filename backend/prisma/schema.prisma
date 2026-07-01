@@ -160,3 +160,79 @@ model JobProfileAccess {
   @@index([jobTitle, department])
   @@map("job_profile_access")
 }
+
+// One row per registry row in the "Document Distribution List" registry list.
+// `registryListId + registryItemId` is the stable identity (the Link URL can
+// be edited by the registry owner; the SharePoint row id can't). `targetListId`
+// is the dereferenced target — null when the URL hasn't been resolved yet.
+//
+// See docs/multi-list-watcher-plan.md §5.1.
+model DistributionList {
+  id              String   @id
+  registryListId  String   @map("registry_list_id")
+  registryItemId  String   @map("registry_item_id")
+  displayName     String   @map("display_name")
+  note            String?
+  listUrl         String   @map("list_url")
+  siteId          String?  @map("site_id")
+  targetListId    String?  @map("target_list_id")
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  lastSyncedAt    DateTime? @map("last_synced_at") @db.Timestamp(6)
+  lastSyncStatus  String   @default("pending") @map("last_sync_status")
+  lastSyncError   String?  @map("last_sync_error")
+  itemsSynced     Int      @default(0) @map("items_synced")
+  itemsPending    Int      @default(0) @map("items_pending")
+  itemsFailed     Int      @default(0) @map("items_failed")
+  itemsRemoved    Int      @default(0) @map("items_removed")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  items                       DistributionListItem[]
+  jobProfileDistributionLists JobProfileDistributionList[]
+
+  @@unique([registryListId, registryItemId], name: "registry_uk", map: "distribution_lists_registry_uk")
+  @@index([targetListId], map: "distribution_lists_target_idx")
+  @@map("distribution_lists")
+}
+
+// Per-doc intent. Mirrors a subset of resources state so the Sidebar can
+// render a list's roster of documents in one SELECT (no Graph round-trip).
+// Caveat: this duplicates state that's authoritative on `resources`. Kept
+// because the UI's "intent vs. outcome" view is much simpler this way.
+model DistributionListItem {
+  id                  String   @id
+  distributionListId  String   @map("distribution_list_id")
+  resourceId          String?  @map("resource_id")
+  sharepointCode      String   @map("sharepoint_code")
+  sharepointTitle     String   @default("") @map("sharepoint_title")
+  sharepointVersion   String   @default("") @map("sharepoint_version")
+  lastSeenAt          DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  syncStatus          String   @default("pending") @map("sync_status")
+  syncError           String?  @map("sync_error")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  distributionList DistributionList @relation(fields: [distributionListId], references: [id], onDelete: Cascade, map: "dli_distribution_list_fk")
+
+  @@unique([distributionListId, sharepointCode], name: "distribution_code_uk", map: "dli_distribution_code_uk")
+  @@index([resourceId], map: "dli_resource_idx")
+  @@index([syncStatus], map: "dli_status_idx")
+  @@map("distribution_list_items")
+}
+
+// (jobTitle, department) ↔ distribution_list edge. Independent of
+// job_profile_access (per-code); answers "which lists does this profile have
+// any access to at all?" — used by the Sidebar's per-profile filtering.
+model JobProfileDistributionList {
+  jobTitle           String   @map("job_title")
+  department         String   @map("department")
+  distributionListId String   @map("distribution_list_id")
+  firstSeenAt        DateTime @default(now()) @map("first_seen_at") @db.Timestamp(6)
+  lastSeenAt         DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
+
+  distributionList DistributionList @relation(fields: [distributionListId], references: [id], onDelete: Cascade, map: "jpdl_distribution_list_fk")
+
+  @@id([jobTitle, department, distributionListId])
+  @@index([distributionListId], map: "jpdl_distribution_idx")
+  @@map("job_profile_distribution_lists")
+}

@@ -7,6 +7,7 @@ import { DocumentsModule } from '../documents/documents.module.js'
 import { DocumentsService } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { SharepointListModule } from '../sharepoint-list/sharepoint-list.module.js'
+import { DistributionListService } from '../sharepoint-list/distribution-list.service.js'
 import { SharepointListService } from '../sharepoint-list/sharepoint-list.service.js'
 import { EffectiveProfileService } from './effective-profile.service.js'
 import { JobProfileSyncQueue } from './job-profile-sync.queue.js'
@@ -40,20 +41,24 @@ import { UserPermissionService } from './user-permission.service.js'
         AppConfig,
         SharepointListService,
         DocumentsService,
+        PrismaService,
         UserPermissionService,
         JobProfileService,
         JobProfileSyncQueue,
         SessionService,
+        DistributionListService,
       ],
       useFactory: (
         c: AppConfig,
         l: SharepointListService,
         d: DocumentsService,
+        p: PrismaService,
         up: UserPermissionService,
         jp: JobProfileService,
         q: JobProfileSyncQueue,
         s: SessionService,
-      ) => new JobProfileSyncService(c, l, d, up, jp, q, s),
+        dl: DistributionListService,
+      ) => new JobProfileSyncService(c, l, d, p, up, jp, q, s, dl),
     },
     {
       provide: EffectiveProfileService,

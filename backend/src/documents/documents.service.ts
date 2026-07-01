@@ -76,7 +76,7 @@ export class DocumentsService {
 
   async uploadLocalFile(buffer: Buffer, filename: string): Promise<ImportResponse> {
     if (!this.parsers.isSupported(filename)) {
-      throw new Error(`Unsupported file type: ${filename}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX`)
+      throw new Error(`Unsupported file type: ${filename}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX, PPTX, PPT, PNG, JPG, JPEG`)
     }
     const parsed = await this.parsers.parseBuffer(buffer, filename)
     const fileType = getFileType(filename)
@@ -100,7 +100,7 @@ export class DocumentsService {
       fileRef.name || (await this.sharepoint.getFileName(accessToken, fileRef.driveId, fileRef.itemId))
 
     if (!this.parsers.isSupported(filename)) {
-      throw new Error(`Unsupported file type: ${filename}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX`)
+      throw new Error(`Unsupported file type: ${filename}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX, PPTX, PPT, PNG, JPG, JPEG`)
     }
 
     const buffer = await this.sharepoint.downloadFile(accessToken, fileRef.driveId, fileRef.itemId)
@@ -352,6 +352,32 @@ export class DocumentsService {
     })
 
     return { kind: existing ? 'updated' : 'ingested', chunkCount: chunks.length }
+  }
+
+  /**
+   * Demote rows whose `sharepointListId` is not in the discovered set to
+   * `pending_access`. The list may have been deleted, renamed, or the current
+   * caller may simply have lost access; in any case its rows should disappear
+   * from search until the list returns. Embeddings are left in place so a
+   * recovery sync doesn't have to re-embed everything from scratch.
+   *
+   * Returns the count of demoted rows.
+   */
+  async demoteOrphanedSharepointRows(discoveredListIds: Set<string>): Promise<number> {
+    const live = Array.from(discoveredListIds)
+    const result = await this.prisma.resource.updateMany({
+      where: {
+        source: 'sharepoint-list',
+        syncStatus: 'synced',
+        sharepointListId: live.length > 0 ? { notIn: live } : { not: null },
+      },
+      data: {
+        syncStatus: 'pending_access',
+        syncError: 'list disappeared from discovery',
+        lastSyncAttempt: new Date(),
+      },
+    })
+    return result.count
   }
 
   /** Remove all SP-sourced resources whose `code` isn't in the given set. */

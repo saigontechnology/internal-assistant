@@ -62,7 +62,9 @@ export class SyncController {
 
   @Get('status')
   async status() {
-    const state = await this.prisma.watcherState.findFirst({ orderBy: { lastRunAt: 'desc' } })
+    // All per-list WatcherState rows, newest first. Multi-list means one row
+    // per known list; the UI can render them as a table.
+    const states = await this.prisma.watcherState.findMany({ orderBy: { lastRunAt: 'desc' } })
 
     // Live totals from the resources table — these answer the question
     // "what's the current state of the index?" which the per-run counters
@@ -81,7 +83,7 @@ export class SyncController {
       running: this.watcher.isRunning(),
       currentStartedAt: this.watcher.getCurrentStart(),
       lastRun: this.watcher.getLastRun(),
-      persistedState: state,
+      persistedState: states,
       indexState: totalsByStatus,
     }
   }
