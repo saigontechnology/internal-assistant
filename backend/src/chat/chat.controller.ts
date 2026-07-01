@@ -1,7 +1,18 @@
-import { BadRequestException, Controller, Inject, Post, Req, Res } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  Controller,
+  Inject,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common'
 import type { Request, Response } from 'express'
 import { readUIMessageStream, type UIMessage } from 'ai'
-import { Public } from '../auth/public.decorator.js'
+import type { Session } from '@prisma/client'
+import { SessionCookieService } from '../auth/session-cookie.service.js'
+import { SessionService } from '../auth/session.service.js'
+import { UserPermissionService } from '../user-permission/user-permission.service.js'
 import { ChatHistoryService } from './chat-history.service.js'
 import { ChatService } from './chat.service.js'
 
@@ -17,6 +28,9 @@ export class ChatController {
   constructor(
     @Inject(ChatService) private readonly chatService: ChatService,
     @Inject(ChatHistoryService) private readonly history: ChatHistoryService,
+    @Inject(SessionCookieService) private readonly cookies: SessionCookieService,
+    @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(UserPermissionService) private readonly perms: UserPermissionService,
   ) {}
 
   /**
@@ -45,17 +59,38 @@ export class ChatController {
    *   response after refresh) additionally needs Redis + the resumable-stream
    *   package; left as a follow-up.
    */
-  @Public()
   @Post('chat')
   async stream(@Req() req: Request, @Res() res: Response) {
     const { id, message } = (req.body ?? {}) as Partial<ChatRequestBody>
     if (!id) throw new BadRequestException('Missing chat `id`')
     if (!message) throw new BadRequestException('Missing `message`')
 
+    // SessionGuard has already attached the session for non-public routes.
+    const session = (req as Request & { session?: Session }).session
+    const email = session?.username ?? null
+
+    // Belt-and-suspenders against a race where the FirstTimeSetup screen was
+    // bypassed: refuse to stream if the user's permission view hasn't been
+    // built yet. The unauthorized-codes filter would otherwise be empty,
+    // letting the chat surface documents the user can't actually access.
+    let unauthorizedCodes = new Set<string>()
+    if (email) {
+      const row = await this.perms.ensure(email)
+      if (row.firstSyncing) {
+        throw new ConflictException({
+          error: 'setup_in_progress',
+          message: 'Your library setup is still in progress. Please wait for it to finish.',
+        })
+      }
+      unauthorizedCodes = this.perms.parseUnauthorized(row)
+    }
+
     const previous = await this.history.load(id)
     const messages: UIMessage[] = [...previous, message]
 
-    const { result, originalMessages } = await this.chatService.streamReply(messages)
+    const { result, originalMessages } = await this.chatService.streamReply(messages, {
+      unauthorizedCodes,
+    })
 
     // ── Reader #1: background persistence ──
     // Fire-and-forget. Iterates the UIMessage stream until the source

@@ -2,8 +2,8 @@ import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from './app-config.service.js'
 
 /**
- * Single place that builds the AI SDK OpenAI client. All four call sites
- * (chat, research-agent, embeddings, documents) now go through here so the
+ * Single place that builds the AI SDK OpenAI client. All call sites
+ * (chat, embeddings, documents) now go through here so the
  * Host-header override stays consistent — see env.schema.ts comment on
  * OPENAI_HOST_OVERRIDE for why.
  */

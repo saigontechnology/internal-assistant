@@ -111,3 +111,40 @@ model Session {
 
   @@map("sessions")
 }
+
+// Per-user permission view of the shared library.
+//
+// `listUnauthorized` is a denormalized, comma-joined cache rebuilt at the end
+// of every per-user sync (sourced from UserResourcePermission). The chat
+// hot-path reads this single row instead of joining the per-resource table.
+//
+// `firstSyncing` flips false after the first successful sync. `syncingStartedAt`
+// is non-null while a job is running; a >30 min stale value is treated as a
+// crashed job and healed by the next GET /api/user/permission.
+model UserPermission {
+  email            String    @id
+  firstSyncing     Boolean   @default(true) @map("first_syncing")
+  listUnauthorized String    @default("")   @map("list_unauthorized")
+  lastSync         DateTime? @map("last_sync") @db.Timestamp(6)
+  syncingStartedAt DateTime? @map("syncing_started_at") @db.Timestamp(6)
+  itemsSeen        Int?      @map("items_seen")
+  itemsTotal       Int?      @map("items_total")
+  lastError        String?   @map("last_error")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("user_permissions")
+}
+
+// Per-user authorization cache, keyed on (email, sharepointCode). Lets the
+// weekly resync skip Graph round-trips for rows checked within the TTL window
+// (default 30 days, configurable via USER_PERM_CACHE_TTL_DAYS).
+model UserResourcePermission {
+  email          String
+  sharepointCode String   @map("sharepoint_code")
+  authorized     Boolean
+  checkedAt      DateTime @map("checked_at") @db.Timestamp(6)
+
+  @@id([email, sharepointCode])
+  @@map("user_resource_permissions")
+}
