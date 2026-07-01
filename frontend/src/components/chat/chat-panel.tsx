@@ -84,7 +84,7 @@ function ActiveChat({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       <MessageList messages={messages} status={status} />
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-6">

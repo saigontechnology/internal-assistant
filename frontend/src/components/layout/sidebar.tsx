@@ -12,7 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { BookOpen, MessageSquarePlus, Trash2, MessageSquare } from "lucide-react"
+import { BookOpen, MessageSquarePlus, Trash2, MessageSquare, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import logoUrlWhite from "@/assets/logo_white.svg"
 
@@ -37,7 +37,7 @@ function ConversationList() {
     selectConversation,
     deleteConversation,
   } = useConversations()
-  const { setView } = useAppView()
+  const { setView, closeSidebar } = useAppView()
 
   return (
     <div className="flex flex-col gap-2">
@@ -47,6 +47,7 @@ function ConversationList() {
         onClick={() => {
           createConversation()
           setView("chat")
+          closeSidebar()
         }}
       >
         <MessageSquarePlus className="size-4" />
@@ -70,11 +71,13 @@ function ConversationList() {
               onClick={() => {
                 selectConversation(conv.id)
                 setView("chat")
+                closeSidebar()
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   selectConversation(conv.id)
                   setView("chat")
+                  closeSidebar()
                 }
               }}
               className={cn(
@@ -120,7 +123,16 @@ export function Sidebar() {
   const [isLoading, setIsLoading] = useState(true)
   const [showTabs, setShowTabs] = useState(false)
   const logoClicksRef = useRef<number[]>([])
-  const { docsRefreshToken } = useAppView()
+  const { docsRefreshToken, isSidebarOpen, closeSidebar } = useAppView()
+
+  useEffect(() => {
+    if (!isSidebarOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeSidebar()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [isSidebarOpen, closeSidebar])
 
   const handleLogoClick = () => {
     const now = Date.now()
@@ -159,7 +171,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <aside
+      className={cn(
+        "flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
+        // Mobile: slide-in drawer over content. Desktop (md+): inline in flow.
+        "fixed inset-y-0 left-0 z-50 w-[19rem] max-w-[85vw] transform transition-transform duration-200 ease-out shadow-xl lg:static lg:z-auto lg:w-auto lg:max-w-none lg:translate-x-0 lg:shadow-none",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}
+      aria-hidden={!isSidebarOpen}
+    >
       <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-4">
         <img
           src={logoUrlWhite}
@@ -176,6 +196,14 @@ export function Sidebar() {
             Document Room
           </span>
         </div>
+        <button
+          type="button"
+          onClick={closeSidebar}
+          aria-label="Close sidebar"
+          className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
+        >
+          <X className="size-5" />
+        </button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -219,7 +247,7 @@ export function Sidebar() {
         </TooltipProvider>
         )}
 
-        <div className="flex w-72 flex-col">
+        <div className="flex w-full min-w-0 flex-1 flex-col lg:w-72 lg:flex-none">
           {activeTab === "chats" ? (
           <>
             <div className="flex items-center gap-2 px-4 py-4">

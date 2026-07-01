@@ -39,13 +39,16 @@ export const envSchema = z.object({
   SHAREPOINT_SITE_PATH: z.string().min(1).default('/SDC/ISOSDC'),
   SHAREPOINT_LIST_NAME: z.string().min(1).default('Danh mục total SDC'),
 
-  // Per-user permission cache TTL (days). Rows in user_resource_permissions
-  // older than this are re-checked against Graph on the next per-user sync.
-  USER_PERM_CACHE_TTL_DAYS: z.coerce.number().int().positive().default(30),
-
-  // How many days between weekly resyncs. A GET /api/user/permission whose
-  // lastSync is older than this triggers a background per-user sync.
+  // How many days between weekly resyncs. A logged-in user whose
+  // user_permissions.lastSync AND their job_profile.lastSync are both older
+  // than this triggers a background job-profile re-scan.
   USER_SYNC_INTERVAL_DAYS: z.coerce.number().int().positive().default(7),
+
+  // Default fallback job profile. When a user's own profile is mid-scan or
+  // not yet known to the system, the chat filter falls back to this profile's
+  // allow-list. Both values are normalized (trim + lowercase) at boot.
+  DEFAULT_JOB_TITLE: z.string().default('Developer'),
+  DEFAULT_DEPARTMENT: z.string().default('SDC 1'),
 })
 
 export type Env = z.infer<typeof envSchema>

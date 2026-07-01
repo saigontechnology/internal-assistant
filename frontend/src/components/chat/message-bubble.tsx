@@ -47,13 +47,13 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
       >
         {isUser ? <User className="size-4" /> : "A"}
       </div>
-      <div className={cn("flex max-w-[80%] flex-col gap-1.5", isUser && "items-end")}>
+      <div className={cn("flex min-w-0 max-w-[80%] flex-col gap-1.5", isUser && "items-end")}>
         <span className="label-eyebrow px-0.5 text-muted-foreground">
           {isUser ? "You" : "Alice"}
         </span>
         <div
           className={cn(
-            "rounded-lg px-4 py-2.5 text-sm leading-relaxed",
+            "min-w-0 rounded-lg px-4 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]",
             isUser
               ? "rounded-tr-sm bg-primary text-primary-foreground shadow-sm whitespace-pre-wrap"
               : "rounded-tl-sm border border-border bg-card text-card-foreground shadow-sm"

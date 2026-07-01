@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useAuth } from "@/lib/auth";
@@ -18,6 +19,13 @@ function MicrosoftLogo({ className }: { className?: string }) {
 export function LoginPage() {
   const { login } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+
+  const handleLogin = () => {
+    setIsSigningIn(true);
+    setError(null);
+    login();
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -65,13 +73,23 @@ export function LoginPage() {
 
           <Button
             type="button"
-            onClick={login}
+            onClick={handleLogin}
+            disabled={isSigningIn}
             className="mt-6 w-full gap-2"
             size="lg"
             variant="outline"
           >
-            <MicrosoftLogo className="size-4" />
-            Sign in with Microsoft
+            {isSigningIn ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Redirecting to Microsoft…
+              </>
+            ) : (
+              <>
+                <MicrosoftLogo className="size-4" />
+                Sign in with Microsoft
+              </>
+            )}
           </Button>
         </div>
       </main>

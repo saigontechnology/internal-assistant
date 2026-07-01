@@ -1,43 +1,45 @@
 import { tool } from 'ai'
 import { z } from 'zod'
-import { EmbeddingsService } from '../embeddings/embeddings.service.js'
+import {
+  EmbeddingsService,
+  type ViewerProfile,
+} from '../embeddings/embeddings.service.js'
 
 export interface DocumentToolsOptions {
   /**
-   * Sharepoint codes the current user is NOT allowed to read. Applied as a
-   * strict server-side post-filter inside both tools. Pass an empty set when
-   * permissions are not in play (e.g., admin-mode calls). The forbidden codes
-   * are NEVER returned to the LLM or echoed in tool output — a filtered chunk
-   * simply does not appear.
+   * The (jobTitle, department) tuple to filter retrieval against. Resolved by
+   * EffectiveProfileService — either the caller's own profile, the configured
+   * default fallback, or undefined (with `publicOnly`) when neither has been
+   * scanned yet.
+   *
+   * Server-side filter only — the tuple is never echoed back to the LLM or
+   * surfaced in tool output.
    */
-  unauthorizedCodes?: Set<string>
+  viewer?: ViewerProfile
+  /**
+   * When `viewer` is omitted AND this is true, results are restricted to
+   * documents with no `sharepointCode` (legacy uploads / "public").
+   */
+  publicOnly?: boolean
 }
 
 /**
- * Factory that produces the Vercel AI SDK tool definitions for the chat
- * agent. Takes the embeddings service as a closure so we don't reach into
- * a global — keeps DI honest.
- *
- * The optional `unauthorizedCodes` set filters retrieval and listing so a
- * user can never receive a citation from a document they cannot open in
- * SharePoint. See docs/per-user-sync-plan.md §6.
+ * Factory that produces the Vercel AI SDK tool definitions for the chat agent.
+ * Access control happens inside the SQL — see EmbeddingsService.
  */
 export function buildDocumentTools(
   embeddings: EmbeddingsService,
   opts: DocumentToolsOptions = {},
 ) {
-  const unauthorized = opts.unauthorizedCodes ?? new Set<string>()
   const listDocumentsTool = tool({
     description:
       "Return an aggregated summary of the user's document library (total count + per-department breakdown). Use this only when the user explicitly asks for an inventory or count. For finding specific documents to answer questions, call retrieveResources directly — it searches the full library.",
     inputSchema: z.object({}),
     execute: async () => {
-      const all = await embeddings.listResourcesWithCounts()
-      // Strip docs whose sharepointCode is in the user's unauthorized set
-      // BEFORE aggregating so counts reflect what the caller can actually see.
-      const docs = unauthorized.size === 0
-        ? all
-        : all.filter((d) => !d.sharepointCode || !unauthorized.has(d.sharepointCode))
+      const docs = await embeddings.listResourcesWithCounts({
+        viewer: opts.viewer,
+        publicOnly: opts.publicOnly,
+      })
       if (docs.length === 0) return 'The user has no documents uploaded.'
       // Aggregate by department code (e.g. "QT-HR.13" → "HR") instead of
       // dumping all N filenames into the prompt. A 375-row dump was costing
@@ -70,30 +72,25 @@ export function buildDocumentTools(
         ),
     }),
     execute: async ({ query, filenames }) => {
-      // Server-side authorization filter. When the top-K is dominated by
-      // unauthorized docs, re-issue the search with a wider K up to a small
-      // bound so the agent still gets material to reason over. The forbidden
-      // codes are never sent to the LLM — filtered chunks simply don't appear.
-      let chunks = await embeddings.similaritySearch(query, { filenames })
-      if (unauthorized.size > 0) {
-        chunks = chunks.filter((c) => {
-          const code = (c.metadata as Record<string, unknown>)?.code
-          return typeof code !== 'string' || !unauthorized.has(code)
-        })
-        if (chunks.length === 0) {
-          const widened = await embeddings.similaritySearch(query, { filenames, k: 24 })
-          chunks = widened.filter((c) => {
-            const code = (c.metadata as Record<string, unknown>)?.code
-            return typeof code !== 'string' || !unauthorized.has(code)
-          })
-        }
+      const { hits, restrictedCount } = await embeddings.similaritySearch(query, {
+        filenames,
+        viewer: opts.viewer,
+        publicOnly: opts.publicOnly,
+      })
+
+      // ACCESS_DENIED is the only signal the agent ever gets about restricted
+      // documents — no filename, code, title, URL, or content. Naming them
+      // would defeat the access-control filter. The system prompt teaches
+      // Alice to translate this into a "you don't have permission" reply.
+      if (hits.length === 0 && restrictedCount > 0) {
+        return `ACCESS_DENIED: ${restrictedCount} document(s) match this query but the current user is not permitted to read them. Do NOT speculate about their contents. Tell the user plainly that they don't have permission to view the matching document(s) for this query and suggest contacting an administrator if they need access.`
       }
-      if (chunks.length === 0) return 'No matching documents found.'
+
+      if (hits.length === 0) return 'No matching documents found.'
+
       // Surface link_url + chunk_index to the chat agent so it can render
-      // proper markdown citations. The display name preference is
-      // "<Code> v<Ver>" when present (sharepoint-list rows), else the
-      // raw filename (legacy uploads / sharepoint imports).
-      return chunks
+      // proper markdown citations.
+      const body = hits
         .map((c) => {
           const m = c.metadata as Record<string, unknown>
           const filename = m.filename as string | undefined
@@ -119,6 +116,15 @@ export function buildDocumentTools(
           return lines.join('\n')
         })
         .join('\n\n---\n\n')
+
+      // Mixed case: some accessible matches AND some restricted matches. Tell
+      // the agent both — answer from the accessible excerpts AND warn the
+      // user that additional matching documents exist that they cannot read.
+      if (restrictedCount > 0) {
+        return `${body}\n\n---\n\nACCESS_DENIED_PARTIAL: ${restrictedCount} additional document(s) also match this query but the current user is not permitted to read them. Answer from the excerpts above, and at the end of your reply add a single short line letting the user know that additional matching documents exist that they don't have permission to view (do NOT name them).`
+      }
+
+      return body
     },
   })
 
