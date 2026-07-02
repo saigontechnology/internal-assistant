@@ -1,0 +1,111 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Redeploy backend + frontend regardless of changed paths"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  detect-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            infra:
+              - 'docker-compose.yml'
+              - '.github/workflows/deploy.yml'
+
+  deploy:
+    name: Deploy to VPS
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || needs.detect-changes.outputs.backend == 'true'
+          || needs.detect-changes.outputs.frontend == 'true'
+          || needs.detect-changes.outputs.infra == 'true' }}
+    steps:
+      - name: Compute services to rebuild
+        id: plan
+        env:
+          BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend }}
+          FRONTEND_CHANGED: ${{ needs.detect-changes.outputs.frontend }}
+          INFRA_CHANGED: ${{ needs.detect-changes.outputs.infra }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -euo pipefail
+          services=""
+          if [ "$FORCE" = "true" ] || [ "$INFRA_CHANGED" = "true" ]; then
+            services="backend frontend"
+          else
+            [ "$BACKEND_CHANGED" = "true" ]  && services="$services backend"
+            [ "$FRONTEND_CHANGED" = "true" ] && services="$services frontend"
+          fi
+          services="$(echo "$services" | xargs)"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Rebuilding: ${services:-<none>}"
+
+      - name: SSH deploy
+        if: steps.plan.outputs.services != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          password: ${{ vars.VPS_PASSWORD }}
+          port: ${{ vars.VPS_PORT || 22 }}
+          script_stop: true
+          envs: DEPLOY_SERVICES,APP_DIR,ENV_FILE_CONTENT,GIT_REF
+          script: |
+            set -euo pipefail
+            cd "$APP_DIR"
+
+            echo "==> Fetching latest main"
+            git fetch --prune origin main
+            git reset --hard "origin/main"
+
+            echo "==> Writing .env (root + backend)"
+            umask 077
+            printf '%s' "$ENV_FILE_CONTENT" > .env
+            printf '%s' "$ENV_FILE_CONTENT" > backend/.env
+
+            echo "==> docker compose build $DEPLOY_SERVICES"
+            docker compose build --pull $DEPLOY_SERVICES
+
+            echo "==> docker compose up -d (all services, recreate changed)"
+            docker compose up -d $DEPLOY_SERVICES
+
+            if echo " $DEPLOY_SERVICES " | grep -q " backend "; then
+              echo "==> Running backend db:migrate"
+              docker compose exec -T backend npm run db:migrate
+            fi
+
+            echo "==> Pruning dangling images"
+            docker image prune -f
+        env:
+          DEPLOY_SERVICES: ${{ steps.plan.outputs.services }}
+          APP_DIR: ${{ vars.VPS_APP_DIR }}
+          ENV_FILE_CONTENT: ${{ secrets.VPS_ENV_FILE }}
+          GIT_REF: ${{ github.sha }}
