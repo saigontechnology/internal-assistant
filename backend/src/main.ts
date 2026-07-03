@@ -8,6 +8,7 @@ import { AppConfig } from './config/app-config.service.js'
 
 const PORT = Number(process.env.PORT ?? 8000)
 
+// Bootstrap the NestJS application
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
