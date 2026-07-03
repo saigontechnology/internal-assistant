@@ -77,7 +77,7 @@ jobs:
           password: ${{ vars.VPS_PASSWORD }}
           port: ${{ vars.VPS_PORT || 22 }}
           script_stop: true
-          envs: DEPLOY_SERVICES,APP_DIR,ENV_FILE_CONTENT,GIT_REF
+          envs: DEPLOY_SERVICES,APP_DIR,GIT_REF,OPENAI_API_BASE,OPENAI_API_KEY,OPENAI_HOST_OVERRIDE,CHAT_MODEL,EMBEDDING_MODEL,CHUNK_SIZE,CHUNK_OVERLAP,POSTGRES_HOST,POSTGRES_PORT,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,AZURE_CLIENT_ID,AZURE_TENANT_ID,AZURE_CLIENT_SECRET,AZURE_REDIRECT_URI,FRONTEND_PORT,FRONTEND_URL,SESSION_SECRET,SHAREPOINT_TENANT_HOSTNAME,SHAREPOINT_SITE_PATH,SHAREPOINT_LIST_NAME,SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS
           script: |
             set -euo pipefail
             cd "$APP_DIR"
@@ -86,10 +86,46 @@ jobs:
             git fetch --prune origin main
             git reset --hard "origin/main"
 
-            echo "==> Writing .env (root + backend)"
+            echo "==> Writing .env (root + backend) from GitHub vars/secrets"
             umask 077
-            printf '%s' "$ENV_FILE_CONTENT" > .env
-            printf '%s' "$ENV_FILE_CONTENT" > backend/.env
+            write_env() {
+              cat > "$1" <<EOF
+            # --- LLM ---
+            OPENAI_API_BASE=$OPENAI_API_BASE
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            OPENAI_HOST_OVERRIDE=$OPENAI_HOST_OVERRIDE
+            CHAT_MODEL=$CHAT_MODEL
+            EMBEDDING_MODEL=$EMBEDDING_MODEL
+            CHUNK_SIZE=$CHUNK_SIZE
+            CHUNK_OVERLAP=$CHUNK_OVERLAP
+
+            # --- Postgres ---
+            POSTGRES_HOST=$POSTGRES_HOST
+            POSTGRES_PORT=$POSTGRES_PORT
+            POSTGRES_USER=$POSTGRES_USER
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+            POSTGRES_DB=$POSTGRES_DB
+
+            # --- Microsoft Entra ID (Azure AD) ---
+            AZURE_CLIENT_ID=$AZURE_CLIENT_ID
+            AZURE_TENANT_ID=$AZURE_TENANT_ID
+            AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET
+            AZURE_REDIRECT_URI=$AZURE_REDIRECT_URI
+
+            # --- App ---
+            FRONTEND_PORT=$FRONTEND_PORT
+            FRONTEND_URL=$FRONTEND_URL
+            SESSION_SECRET=$SESSION_SECRET
+
+            # --- SharePoint List watcher ---
+            SHAREPOINT_TENANT_HOSTNAME=$SHAREPOINT_TENANT_HOSTNAME
+            SHAREPOINT_SITE_PATH=$SHAREPOINT_SITE_PATH
+            SHAREPOINT_LIST_NAME=$SHAREPOINT_LIST_NAME
+            SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS=$SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS
+            EOF
+            }
+            write_env .env
+            write_env backend/.env
 
             echo "==> docker compose build $DEPLOY_SERVICES"
             docker compose build --pull $DEPLOY_SERVICES
@@ -107,5 +143,32 @@ jobs:
         env:
           DEPLOY_SERVICES: ${{ steps.plan.outputs.services }}
           APP_DIR: ${{ vars.VPS_APP_DIR }}
-          ENV_FILE_CONTENT: ${{ secrets.VPS_ENV_FILE }}
           GIT_REF: ${{ github.sha }}
+          # --- LLM ---
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_HOST_OVERRIDE: ${{ vars.OPENAI_HOST_OVERRIDE }}
+          CHAT_MODEL: ${{ vars.CHAT_MODEL }}
+          EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+          CHUNK_SIZE: ${{ vars.CHUNK_SIZE }}
+          CHUNK_OVERLAP: ${{ vars.CHUNK_OVERLAP }}
+          # --- Postgres ---
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ vars.POSTGRES_PORT }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+          # --- Azure ---
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_REDIRECT_URI: ${{ vars.AZURE_REDIRECT_URI }}
+          # --- App ---
+          FRONTEND_PORT: ${{ vars.FRONTEND_PORT }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          # --- SharePoint ---
+          SHAREPOINT_TENANT_HOSTNAME: ${{ vars.SHAREPOINT_TENANT_HOSTNAME }}
+          SHAREPOINT_SITE_PATH: ${{ vars.SHAREPOINT_SITE_PATH }}
+          SHAREPOINT_LIST_NAME: ${{ vars.SHAREPOINT_LIST_NAME }}
+          SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS: ${{ vars.SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS }}
