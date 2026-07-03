@@ -72,9 +72,9 @@ jobs:
         if: steps.plan.outputs.services != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ vars.VPS_HOST }}
-          username: ${{ vars.VPS_USER }}
-          password: ${{ vars.VPS_PASSWORD }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ vars.VPS_PORT || 22 }}
           script_stop: true
           envs: DEPLOY_SERVICES,APP_DIR,GIT_REF,OPENAI_API_BASE,OPENAI_API_KEY,OPENAI_HOST_OVERRIDE,CHAT_MODEL,EMBEDDING_MODEL,CHUNK_SIZE,CHUNK_OVERLAP,POSTGRES_HOST,POSTGRES_PORT,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,AZURE_CLIENT_ID,AZURE_TENANT_ID,AZURE_CLIENT_SECRET,AZURE_REDIRECT_URI,FRONTEND_PORT,FRONTEND_URL,SESSION_SECRET,SHAREPOINT_TENANT_HOSTNAME,SHAREPOINT_SITE_PATH,SHAREPOINT_LIST_NAME,SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS
