@@ -17,7 +17,7 @@ concurrency:
 jobs:
   detect-changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -41,7 +41,7 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: >-
       ${{ github.event_name == 'workflow_dispatch'
           || needs.detect-changes.outputs.backend == 'true'
