@@ -35,7 +35,7 @@ concurrency:
 jobs:
   migrate:
     name: Copy old -> new on VPS
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Mask old password
         run: echo "::add-mask::${{ github.event.inputs.old_password }}"
@@ -43,27 +43,16 @@ jobs:
       - name: SSH copy database
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ vars.VPS_HOST }}
-          username: ${{ vars.VPS_USER }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ vars.VPS_PORT || 22 }}
           script_stop: true
-          envs: APP_DIR,OLD_HOST,OLD_PORT,OLD_USER,OLD_PASSWORD,OLD_DB,DROP_TARGET,RUN_PRISMA_MIGRATE,ENV_FILE_CONTENT
+          envs: APP_DIR,OLD_HOST,OLD_PORT,OLD_USER,OLD_PASSWORD,OLD_DB,DROP_TARGET,RUN_PRISMA_MIGRATE,NEW_USER,NEW_DB
           script: |
             set -euo pipefail
             cd "$APP_DIR"
 
-            echo "==> Ensuring .env is present (root + backend)"
-            umask 077
-            printf '%s' "$ENV_FILE_CONTENT" > .env
-            printf '%s' "$ENV_FILE_CONTENT" > backend/.env
-
-            # Read NEW DB config from the .env we just wrote.
-            set -a
-            . ./.env
-            set +a
-            NEW_USER="${POSTGRES_USER:-docwise}"
-            NEW_DB="${POSTGRES_DB:-docwise}"
             echo "==> Target DB: user=$NEW_USER db=$NEW_DB"
 
             echo "==> Bringing up postgres"
@@ -114,4 +103,5 @@ jobs:
           OLD_DB: ${{ github.event.inputs.old_db }}
           DROP_TARGET: ${{ github.event.inputs.drop_target }}
           RUN_PRISMA_MIGRATE: ${{ github.event.inputs.run_prisma_migrate }}
-          ENV_FILE_CONTENT: ${{ secrets.VPS_ENV_FILE }}
+          NEW_USER: ${{ vars.POSTGRES_USER }}
+          NEW_DB: ${{ vars.POSTGRES_DB }}
