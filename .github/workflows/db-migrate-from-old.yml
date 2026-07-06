@@ -1,0 +1,117 @@
+name: DB migrate from old database
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_host:
+        description: "Old POSTGRES_HOST"
+        required: true
+      old_port:
+        description: "Old POSTGRES_PORT"
+        required: true
+        default: "5432"
+      old_user:
+        description: "Old POSTGRES_USER"
+        required: true
+      old_password:
+        description: "Old POSTGRES_PASSWORD"
+        required: true
+      old_db:
+        description: "Old POSTGRES_DB"
+        required: true
+      drop_target:
+        description: "DROP and recreate the target database before restoring"
+        type: boolean
+        default: false
+      run_prisma_migrate:
+        description: "Run `npm run db:migrate` after copy (applies newer migrations, if any)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: db-migrate-vps
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Copy old -> new on VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask old password
+        run: echo "::add-mask::${{ github.event.inputs.old_password }}"
+
+      - name: SSH copy database
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ vars.VPS_PORT || 22 }}
+          script_stop: true
+          envs: APP_DIR,OLD_HOST,OLD_PORT,OLD_USER,OLD_PASSWORD,OLD_DB,DROP_TARGET,RUN_PRISMA_MIGRATE,ENV_FILE_CONTENT
+          script: |
+            set -euo pipefail
+            cd "$APP_DIR"
+
+            echo "==> Ensuring .env is present (root + backend)"
+            umask 077
+            printf '%s' "$ENV_FILE_CONTENT" > .env
+            printf '%s' "$ENV_FILE_CONTENT" > backend/.env
+
+            # Read NEW DB config from the .env we just wrote.
+            set -a
+            . ./.env
+            set +a
+            NEW_USER="${POSTGRES_USER:-docwise}"
+            NEW_DB="${POSTGRES_DB:-docwise}"
+            echo "==> Target DB: user=$NEW_USER db=$NEW_DB"
+
+            echo "==> Bringing up postgres"
+            docker compose up -d postgres
+
+            echo "==> Waiting for postgres to be healthy"
+            for i in $(seq 1 30); do
+              if docker compose exec -T postgres pg_isready -U "$NEW_USER" -d postgres >/dev/null 2>&1; then
+                break
+              fi
+              sleep 2
+            done
+            docker compose exec -T postgres pg_isready -U "$NEW_USER" -d postgres
+
+            if [ "$DROP_TARGET" = "true" ]; then
+              echo "==> Dropping and recreating $NEW_DB"
+              docker compose exec -T postgres psql -U "$NEW_USER" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$NEW_DB\";"
+              docker compose exec -T postgres psql -U "$NEW_USER" -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$NEW_DB\" OWNER \"$NEW_USER\";"
+            else
+              echo "==> Ensuring $NEW_DB exists"
+              docker compose exec -T postgres psql -U "$NEW_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$NEW_DB'" | grep -q 1 \
+                || docker compose exec -T postgres psql -U "$NEW_USER" -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$NEW_DB\" OWNER \"$NEW_USER\";"
+            fi
+
+            echo "==> Dumping old DB and restoring into new DB (streaming)"
+            docker compose exec -T \
+              -e PGPASSWORD="$OLD_PASSWORD" \
+              postgres \
+              pg_dump \
+                -h "$OLD_HOST" -p "$OLD_PORT" -U "$OLD_USER" -d "$OLD_DB" \
+                --no-owner --no-privileges --clean --if-exists \
+            | docker compose exec -T postgres \
+                psql -U "$NEW_USER" -d "$NEW_DB" -v ON_ERROR_STOP=1
+
+            if [ "$RUN_PRISMA_MIGRATE" = "true" ]; then
+              echo "==> Ensuring backend is up and running db:migrate"
+              docker compose up -d backend
+              docker compose exec -T backend npm run db:migrate
+            fi
+
+            echo "==> Done"
+        env:
+          APP_DIR: ${{ vars.VPS_APP_DIR }}
+          OLD_HOST: ${{ github.event.inputs.old_host }}
+          OLD_PORT: ${{ github.event.inputs.old_port }}
+          OLD_USER: ${{ github.event.inputs.old_user }}
+          OLD_PASSWORD: ${{ github.event.inputs.old_password }}
+          OLD_DB: ${{ github.event.inputs.old_db }}
+          DROP_TARGET: ${{ github.event.inputs.drop_target }}
+          RUN_PRISMA_MIGRATE: ${{ github.event.inputs.run_prisma_migrate }}
+          ENV_FILE_CONTENT: ${{ secrets.VPS_ENV_FILE }}
