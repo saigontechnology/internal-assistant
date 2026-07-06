@@ -68,17 +68,9 @@ jobs:
             ls -lh "$BACKUP_FILE"
 
             echo "==> Ensuring role $NEW_USER exists"
-            docker compose exec -T postgres psql -U "$OLD_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
-            DO \$\$
-            BEGIN
-              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$NEW_USER') THEN
-                CREATE ROLE "$NEW_USER" WITH LOGIN SUPERUSER PASSWORD '$NEW_PASSWORD';
-              ELSE
-                ALTER ROLE "$NEW_USER" WITH LOGIN SUPERUSER PASSWORD '$NEW_PASSWORD';
-              END IF;
-            END
-            \$\$;
-            SQL
+            ROLE_SQL="DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${NEW_USER}') THEN CREATE ROLE \"${NEW_USER}\" WITH LOGIN SUPERUSER PASSWORD \$pw\$${NEW_PASSWORD}\$pw\$; ELSE ALTER ROLE \"${NEW_USER}\" WITH LOGIN SUPERUSER PASSWORD \$pw\$${NEW_PASSWORD}\$pw\$; END IF; END \$do\$;"
+            docker compose exec -T -e ROLE_SQL="$ROLE_SQL" postgres \
+              bash -c 'psql -U '"$OLD_USER"' -d postgres -v ON_ERROR_STOP=1 -c "$ROLE_SQL"'
 
             echo "==> Ensuring database $NEW_DB exists (owner=$NEW_USER)"
             docker compose exec -T postgres psql -U "$OLD_USER" -d postgres -tAc \
