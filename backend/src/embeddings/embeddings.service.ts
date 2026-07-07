@@ -255,6 +255,7 @@ export class EmbeddingsService {
             code: typeof srcMd.code === 'string' ? srcMd.code : undefined,
             version: typeof srcMd.version === 'string' ? srcMd.version : undefined,
             title: typeof srcMd.title === 'string' ? srcMd.title : undefined,
+            date: typeof srcMd.date === 'string' ? srcMd.date : undefined,
           },
         }
       })

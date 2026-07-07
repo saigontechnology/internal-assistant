@@ -99,6 +99,7 @@ export function buildDocumentTools(
           const title = m.title as string | undefined
           const linkUrl = m.link_url as string | undefined
           const chunkIndex = m.chunk_index as string | undefined
+          const date = m.date as string | undefined
 
           const display =
             code && version ? `${code} v${version}` :
@@ -109,6 +110,8 @@ export function buildDocumentTools(
           lines.push(`--- From: ${display}`)
           if (title) lines.push(`Title: ${title}`)
           if (filename && code) lines.push(`Filename: ${filename}`)
+          if (version) lines.push(`Version: ${version}`)
+          if (date) lines.push(`Date: ${date}`)
           if (linkUrl) lines.push(`URL: ${linkUrl}`)
           if (chunkIndex !== undefined) lines.push(`Section: chunk ${chunkIndex}`)
           lines.push('---')
