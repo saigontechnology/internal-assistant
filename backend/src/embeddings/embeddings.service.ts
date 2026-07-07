@@ -225,10 +225,42 @@ export class EmbeddingsService {
         LIMIT ${fetchSize}
       `
 
+      // Prefer the latest version. The same logical document (same sharepoint
+      // `code`) can appear in the candidate pool as multiple versions — across
+      // lists, re-uploads, or version-stamped filenames — and semantic ranking
+      // alone will happily surface an OLD version if its wording matches the
+      // query better. That's how the agent ends up answering from a superseded
+      // document. So: find the newest version present per code, then drop every
+      // chunk belonging to an older version before we pick.
+      const rowVersion = (r: Row): string => {
+        const v = (r.source_metadata ?? {}).version
+        return typeof v === 'string' ? v : ''
+      }
+      const rowCode = (r: Row): string | undefined => {
+        const c = (r.source_metadata ?? {}).code
+        return typeof c === 'string' && c ? c : undefined
+      }
+      const latestVersionByCode = new Map<string, string>()
+      for (const r of rows) {
+        const code = rowCode(r)
+        if (!code) continue
+        const v = rowVersion(r)
+        const best = latestVersionByCode.get(code)
+        if (best === undefined || compareVersions(v, best) > 0) {
+          latestVersionByCode.set(code, v)
+        }
+      }
+
       // Cap per-document so a single dominant file can't drown out the rest.
       const perDoc = new Map<string, number>()
       const picked: Row[] = []
       for (const r of rows) {
+        const code = rowCode(r)
+        if (code) {
+          const latest = latestVersionByCode.get(code)
+          // Skip stale versions of a document we have a newer version of.
+          if (latest !== undefined && compareVersions(rowVersion(r), latest) < 0) continue
+        }
         const n = perDoc.get(r.filename) ?? 0
         if (n >= maxPerDoc) continue
         perDoc.set(r.filename, n + 1)
@@ -382,4 +414,25 @@ export class EmbeddingsService {
       }
     })
   }
+}
+
+/**
+ * Compare two document version strings. Returns >0 when `a` is newer than `b`,
+ * <0 when older, 0 when equal. Handles the common shapes in this corpus —
+ * plain integers ("07" vs "03") and dotted versions ("1.10" vs "1.9") — by
+ * comparing dot-separated segments numerically. Non-digit characters within a
+ * segment (e.g. a stray "v") are stripped; a missing segment counts as 0, so
+ * "1" and "1.0" are equal.
+ */
+export function compareVersions(a: string, b: string): number {
+  const parse = (v: string): number[] =>
+    v.split('.').map((s) => parseInt(s.replace(/[^\d]/g, ''), 10) || 0)
+  const pa = parse(a)
+  const pb = parse(b)
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
 }
