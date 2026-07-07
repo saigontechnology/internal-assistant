@@ -22,6 +22,15 @@ export class AppConfig {
   }
   get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
   get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
+
+  // ── Chat provider switch (OpenAI ↔ Gemini) ──
+  get chatProvider(): 'openai' | 'gemini' { return this.raw.getOrThrow('CHAT_PROVIDER') }
+  get googleApiKey(): string | undefined {
+    const v = this.raw.get<string>('GOOGLE_GENERATIVE_AI_API_KEY')
+    return v && v.length ? v : undefined
+  }
+  get geminiChatModel()         { return this.raw.getOrThrow('GEMINI_CHAT_MODEL') }
+  get geminiChatFallbackModel() { return this.raw.getOrThrow('GEMINI_CHAT_FALLBACK_MODEL') }
   get chunkSize()     { return this.raw.getOrThrow('CHUNK_SIZE') }
   get chunkOverlap()  { return this.raw.getOrThrow('CHUNK_OVERLAP') }
 
