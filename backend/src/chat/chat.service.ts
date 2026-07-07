@@ -2,12 +2,15 @@ import {
   convertToModelMessages,
   stepCountIs,
   streamText,
+  type LanguageModel,
   type StreamTextResult,
   type UIMessage,
 } from 'ai'
 import { type OpenAIProvider } from '@ai-sdk/openai'
+import { type GoogleGenerativeAIProvider } from '@ai-sdk/google'
 import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
+import { buildGoogleClient } from '../config/google-client.js'
 import {
   EmbeddingsService,
   type ViewerProfile,
@@ -21,6 +24,7 @@ Workflow:
 - Call retrieveResources multiple times with different query angles (synonyms, sub-questions, related concepts) when the first pass is thin. Use the filenames argument only when you already know a specific filename you want to drill into.
 - 1-2 well-aimed retrievals usually beat 3+ unfocused ones. If the first retrieval already has the answer, synthesize and stop.
 - If retrieval returns nothing useful, refine the query and try again. If the corpus genuinely doesn't contain an answer, say so plainly.
+- If after all your retrieval attempts (typically 2-3 refined queries) no relevant results are returned, respond with a clear message such as: "I couldn't find any documents in your library that address this question. You may want to try rephrasing your question, or the information may not exist in the uploaded documents." Do NOT fabricate an answer from general knowledge, and do NOT keep retrying indefinitely.
 
 Citation rules:
 - **Every citation MUST be a Markdown link.** Use the URL the retrieval tool returned for that excerpt (the line beginning "URL:"). Format: \`[<display>](<URL>)\`.
@@ -40,14 +44,66 @@ Access control:
  * actual semantic search). A single LLM stream drives both retrieval and the
  * final answer so the user only waits for one generation pass.
  */
+/**
+ * How long we route Gemini traffic to the fallback model after a 429 on
+ * the primary. Long enough to ride out a per-minute burst; short enough
+ * that we return to the primary once its quota window rolls.
+ */
+const GEMINI_QUOTA_COOLDOWN_MS = 60_000
+
 export class ChatService {
   private readonly openai: OpenAIProvider
+  private readonly google: GoogleGenerativeAIProvider | null
+  /** Epoch ms until which we skip the Gemini primary and use the fallback. 0 = healthy. */
+  private geminiQuotaTrippedUntil = 0
 
   constructor(
     private readonly config: AppConfig,
     private readonly embeddings: EmbeddingsService,
   ) {
     this.openai = buildOpenAIClient(this.config)
+    this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
+  }
+
+  /**
+   * Resolve the chat model based on CHAT_PROVIDER. Only the generation
+   * path is provider-switched; embeddings always use OpenAI.
+   *
+   * When the Gemini primary has recently tripped a 429, route to the
+   * configured fallback model until the cooldown expires.
+   */
+  private resolveChatModel(): LanguageModel {
+    if (this.config.chatProvider === 'gemini') {
+      if (!this.google) {
+        throw new Error('CHAT_PROVIDER=gemini but Google client was not initialized')
+      }
+      const useFallback = Date.now() < this.geminiQuotaTrippedUntil
+      const modelId = useFallback
+        ? this.config.geminiChatFallbackModel
+        : this.config.geminiChatModel
+      return this.google(modelId)
+    }
+    return this.openai.chat(this.config.chatModel)
+  }
+
+  /**
+   * Inspect a streamText error and, when it looks like a Gemini quota
+   * hit, arm the cooldown so subsequent requests use the fallback model.
+   */
+  private handleStreamError(err: unknown): void {
+    if (this.config.chatProvider !== 'gemini') return
+    if (!isRateLimitError(err)) return
+    const until = Date.now() + GEMINI_QUOTA_COOLDOWN_MS
+    // Only extend the window; never shorten it if a second 429 lands while cooling.
+    if (until > this.geminiQuotaTrippedUntil) this.geminiQuotaTrippedUntil = until
+    console.warn(
+      JSON.stringify({
+        event: 'gemini_quota_tripped',
+        primaryModel: this.config.geminiChatModel,
+        fallbackModel: this.config.geminiChatFallbackModel,
+        cooldownMs: GEMINI_QUOTA_COOLDOWN_MS,
+      }),
+    )
   }
 
   private buildTools(opts: { viewer?: ViewerProfile; publicOnly?: boolean }) {
@@ -78,12 +134,32 @@ export class ChatService {
   }> {
     const modelMessages = await convertToModelMessages(messages)
     const result = streamText({
-      model: this.openai.chat(this.config.chatModel),
+      model: this.resolveChatModel(),
       system: SYSTEM_PROMPT,
       messages: modelMessages,
       tools: this.buildTools(opts),
       stopWhen: stepCountIs(4),
+      onError: ({ error }) => this.handleStreamError(error),
     })
     return { result, originalMessages: messages }
   }
+}
+
+/**
+ * Best-effort detection of a rate-limit / quota response. Google returns
+ * HTTP 429 with a `RESOURCE_EXHAUSTED` status; the AI SDK wraps this in
+ * an APICallError but we probe defensively so we don't couple to that
+ * shape.
+ */
+function isRateLimitError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const anyErr = err as { statusCode?: number; status?: number; message?: string; name?: string }
+  if (anyErr.statusCode === 429 || anyErr.status === 429) return true
+  const msg = (anyErr.message ?? '').toLowerCase()
+  return (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota')
+  )
 }

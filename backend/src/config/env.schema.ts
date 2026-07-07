@@ -10,6 +10,17 @@ export const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
   CHAT_MODEL: z.string().default('deepseek/deepseek-v4-flash:free'),
   EMBEDDING_MODEL: z.string().default('nvidia/llama-nemotron-embed-vl-1b-v2:free'),
+
+  // Chat provider switch for the staged OpenAI → Gemini migration. Only
+  // affects the chat/generation path; the embedding pipeline stays on
+  // OpenAI regardless. See docs/gemini-migration-plan.md.
+  CHAT_PROVIDER: z.enum(['openai', 'gemini']).default('openai'),
+  // Google Generative AI credentials + model IDs. Required when
+  // CHAT_PROVIDER=gemini; optional otherwise so local dev on the OpenAI
+  // path doesn't need a Google key.
+  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+  GEMINI_CHAT_MODEL: z.string().default('gemini-2.5-flash-lite'),
+  GEMINI_CHAT_FALLBACK_MODEL: z.string().default('gemini-3-flash'),
   CHUNK_SIZE: z.coerce.number().default(1000),
   CHUNK_OVERLAP: z.coerce.number().default(200),
 
@@ -57,6 +68,14 @@ export const envSchema = z.object({
   // allow-list. Both values are normalized (trim + lowercase) at boot.
   DEFAULT_JOB_TITLE: z.string().default('Developer'),
   DEFAULT_DEPARTMENT: z.string().default('SDC 1'),
+}).superRefine((env, ctx) => {
+  if (env.CHAT_PROVIDER === 'gemini' && !env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GOOGLE_GENERATIVE_AI_API_KEY'],
+      message: 'GOOGLE_GENERATIVE_AI_API_KEY is required when CHAT_PROVIDER=gemini',
+    })
+  }
 })
 
 export type Env = z.infer<typeof envSchema>
