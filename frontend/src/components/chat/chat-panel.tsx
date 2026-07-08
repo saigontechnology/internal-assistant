@@ -22,12 +22,19 @@ function ActiveChat({
   // The server loads the prior turns from `chat_histories` by id and appends
   // before calling streamText. Memoized so it isn't reconstructed on every
   // render (which would otherwise tear down the open SSE connection).
+  //
+  // `prepareReconnectToStreamRequest` matches our backend route
+  // (`GET /api/chat/:id/stream`) — used by `resume: true` on mount to
+  // reconnect to an in-flight stream after a refresh / network drop.
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         prepareSendMessagesRequest({ messages, id }) {
           return { body: { id, message: messages[messages.length - 1] } };
+        },
+        prepareReconnectToStreamRequest({ id }) {
+          return { api: `/api/chat/${id}/stream` };
         },
       }),
     [],
@@ -37,6 +44,10 @@ function ActiveChat({
     id: conversationId,
     messages: initialMessages,
     transport,
+    // On mount, ask the server whether there's an in-flight stream for this
+    // chat. 204 → nothing to resume; otherwise the SSE picks up where it left
+    // off. Backed by the resumable-stream + Redis wiring on the server.
+    resume: true,
     onFinish: () => {
       saveRef.current?.();
     },
@@ -69,6 +80,24 @@ function ActiveChat({
     if (!text || isActive) return;
     setInput("");
     sendMessage({ text });
+  };
+
+  // Explicit stop: with `resume: true`, `stop()` alone is treated as a
+  // disconnect — the LLM keeps running server-side and a refresh would
+  // reconnect. So we tell the server to cancel the underlying run and
+  // hand it the partial assistant message we've rendered so far. Fired
+  // as fire-and-forget; if the fetch fails the local `stop()` still runs.
+  const requestStop = () => {
+    const last = messages[messages.length - 1];
+    const assistantMessage = last?.role === "assistant" ? last : undefined;
+    void fetch(`/api/chat/${conversationId}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(assistantMessage ? { assistantMessage } : {}),
+    }).catch(() => {
+      // Network drop or 4xx — the local disconnect below is still worth doing.
+    });
+    void stop();
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -117,7 +146,7 @@ function ActiveChat({
             // Enabled while streaming (so the user can stop), and otherwise
             // only when they've typed something.
             disabled={!isActive && !input.trim()}
-            onClick={isActive ? () => stop() : undefined}
+            onClick={isActive ? requestStop : undefined}
             aria-label={isActive ? "Stop generating" : "Send"}
             className="absolute inset-y-0 right-2 my-auto size-8 rounded-[0.4rem] active:translate-y-0"
           >

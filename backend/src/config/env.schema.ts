@@ -20,7 +20,13 @@ export const envSchema = z.object({
   // path doesn't need a Google key.
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   GEMINI_CHAT_MODEL: z.string().default('gemini-2.5-flash-lite'),
-  GEMINI_CHAT_FALLBACK_MODEL: z.string().default('gemini-3-flash'),
+  // First-tier fallback: same generation as the primary so tool-call format
+  // and answer style stay consistent across failover.
+  GEMINI_CHAT_FALLBACK_MODEL: z.string().default('gemini-2.5-flash'),
+  // Second-tier fallback: independent quota bucket, reached only when the
+  // first fallback is also cooling down. Provides one more rung before we
+  // surface a hard error to the user. See docs/gemini-migration-plan.md §5.
+  GEMINI_CHAT_SECOND_FALLBACK_MODEL: z.string().default('gemini-3.1-flash'),
   CHUNK_SIZE: z.coerce.number().default(1000),
   CHUNK_OVERLAP: z.coerce.number().default(200),
 
@@ -38,6 +44,12 @@ export const envSchema = z.object({
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   SESSION_SECRET: z.string().min(1).default('dev-insecure-secret-change-me'),
   NODE_ENV: z.enum(['development', 'production']).default('development'),
+
+  // Redis backing store for resumable-stream. Publishes chat SSE chunks so a
+  // reconnecting client (page refresh, network drop) can pick up mid-stream
+  // via GET /api/chat/:id/stream. Required — the chat resume path won't boot
+  // without it.
+  REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
 
   // Optional. When set, sent as the `Host` header on every outbound OpenAI
   // request. Workaround for upstream proxies that gate on Host (e.g. our
