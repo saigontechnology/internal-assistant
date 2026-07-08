@@ -65,9 +65,11 @@ Access control:
  * final answer so the user only waits for one generation pass.
  */
 /**
- * How long we route Gemini traffic to the fallback model after a 429 on
- * the primary. Long enough to ride out a per-minute burst; short enough
- * that we return to the primary once its quota window rolls.
+ * Per-model cooldown after a 429. Long enough to ride out a per-minute
+ * burst; short enough that we return to a higher tier once its quota
+ * window rolls. Applied independently to each rung of the fallback
+ * ladder so a 429 on the second fallback doesn't incorrectly extend
+ * the first fallback's cooldown.
  */
 const GEMINI_QUOTA_COOLDOWN_MS = 60_000
 
@@ -90,8 +92,12 @@ Who you're talking to:
 export class ChatService {
   private readonly openai: OpenAIProvider
   private readonly google: GoogleGenerativeAIProvider | null
-  /** Epoch ms until which we skip the Gemini primary and use the fallback. 0 = healthy. */
-  private geminiQuotaTrippedUntil = 0
+  /**
+   * Per-model cooldown timers keyed by modelId. A missing / past value
+   * means the model is healthy. Populated by handleStreamError when the
+   * specific model that just streamed emits a 429.
+   */
+  private readonly cooldowns = new Map<string, number>()
 
   constructor(
     private readonly config: AppConfig,
@@ -101,42 +107,58 @@ export class ChatService {
     this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
   }
 
+  /** The ordered Gemini ladder: primary → first fallback → second fallback. */
+  private geminiLadder(): string[] {
+    return [
+      this.config.geminiChatModel,
+      this.config.geminiChatFallbackModel,
+      this.config.geminiChatSecondFallbackModel,
+    ]
+  }
+
   /**
    * Resolve the chat model based on CHAT_PROVIDER. Only the generation
    * path is provider-switched; embeddings always use OpenAI.
    *
-   * When the Gemini primary has recently tripped a 429, route to the
-   * configured fallback model until the cooldown expires.
+   * For Gemini: walk the fallback ladder and pick the first rung whose
+   * cooldown has expired. If every rung is still cooling (rare — would
+   * mean all three tiers took a 429 within the same 60s window), fall
+   * through to the last rung anyway; hitting it and taking another 429
+   * is still better than surfacing a hard error.
    */
-  private resolveChatModel(): LanguageModel {
+  private resolveChatModel(): { model: LanguageModel; modelId: string } {
     if (this.config.chatProvider === 'gemini') {
       if (!this.google) {
         throw new Error('CHAT_PROVIDER=gemini but Google client was not initialized')
       }
-      const useFallback = Date.now() < this.geminiQuotaTrippedUntil
-      const modelId = useFallback
-        ? this.config.geminiChatFallbackModel
-        : this.config.geminiChatModel
-      return this.google(modelId)
+      const now = Date.now()
+      const ladder = this.geminiLadder()
+      const healthy = ladder.find((id) => (this.cooldowns.get(id) ?? 0) <= now)
+      const modelId = healthy ?? ladder[ladder.length - 1]!
+      return { model: this.google(modelId), modelId }
     }
-    return this.openai.chat(this.config.chatModel)
+    return { model: this.openai.chat(this.config.chatModel), modelId: this.config.chatModel }
   }
 
   /**
    * Inspect a streamText error and, when it looks like a Gemini quota
-   * hit, arm the cooldown so subsequent requests use the fallback model.
+   * hit, arm the cooldown for the SPECIFIC model that emitted it. The
+   * next resolveChatModel() call will then skip that rung and use the
+   * next one down. Only extends the timer — never shortens it when a
+   * second 429 lands while cooling.
    */
-  private handleStreamError(err: unknown): void {
+  private handleStreamError(err: unknown, modelId: string): void {
     if (this.config.chatProvider !== 'gemini') return
     if (!isRateLimitError(err)) return
     const until = Date.now() + GEMINI_QUOTA_COOLDOWN_MS
-    // Only extend the window; never shorten it if a second 429 lands while cooling.
-    if (until > this.geminiQuotaTrippedUntil) this.geminiQuotaTrippedUntil = until
+    const prev = this.cooldowns.get(modelId) ?? 0
+    if (until > prev) this.cooldowns.set(modelId, until)
+    const ladder = this.geminiLadder()
     console.warn(
       JSON.stringify({
         event: 'gemini_quota_tripped',
-        primaryModel: this.config.geminiChatModel,
-        fallbackModel: this.config.geminiChatFallbackModel,
+        trippedModel: modelId,
+        tier: ladder.indexOf(modelId), // 0 = primary, 1 = first fallback, 2 = second fallback
         cooldownMs: GEMINI_QUOTA_COOLDOWN_MS,
       }),
     )
@@ -160,7 +182,16 @@ export class ChatService {
    */
   async streamReply(
     messages: UIMessage[],
-    opts: { viewer?: ViewerProfile; publicOnly?: boolean } = {},
+    opts: {
+      viewer?: ViewerProfile
+      publicOnly?: boolean
+      /**
+       * Aborts the underlying LLM call. Wired to a per-stream AbortController
+       * held in ActiveStreamRegistry so POST /api/chat/:id/stop can cancel
+       * generation (not just close the HTTP pipe).
+       */
+      abortSignal?: AbortSignal
+    } = {},
   ): Promise<{
     // Use `any` for the tool generic so TS doesn't need to resolve `typeof this`
     // in a return-type position (which errors with `strictThis`). The concrete
@@ -169,13 +200,18 @@ export class ChatService {
     originalMessages: UIMessage[]
   }> {
     const modelMessages = await convertToModelMessages(messages)
+    // Capture the resolved modelId so onError can attribute a 429 to the
+    // exact rung that streamed (not e.g. the primary when we were actually
+    // running the second fallback).
+    const { model, modelId } = this.resolveChatModel()
     const result = streamText({
-      model: this.resolveChatModel(),
+      model,
       system: buildSystemPrompt(opts.viewer),
       messages: modelMessages,
       tools: this.buildTools(opts),
       stopWhen: stepCountIs(4),
-      onError: ({ error }) => this.handleStreamError(error),
+      abortSignal: opts.abortSignal,
+      onError: ({ error }) => this.handleStreamError(error, modelId),
     })
     return { result, originalMessages: messages }
   }

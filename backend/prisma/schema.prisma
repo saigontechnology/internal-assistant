@@ -57,6 +57,11 @@ model ChatHistory {
   // validateUIMessages on every load to make sure tool parts still match
   // the current tool set.
   messages  Json     @default("[]")
+  // ID of the currently-active resumable stream (published in Redis via
+  // resumable-stream). Non-null only while a chat is mid-generation; cleared
+  // in the streamText onFinish callback and on explicit stop. A resuming
+  // client GETs /api/chat/:id/stream, which looks this up to reconnect.
+  activeStreamId String? @map("active_stream_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 

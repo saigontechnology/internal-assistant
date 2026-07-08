@@ -29,8 +29,9 @@ export class AppConfig {
     const v = this.raw.get<string>('GOOGLE_GENERATIVE_AI_API_KEY')
     return v && v.length ? v : undefined
   }
-  get geminiChatModel()         { return this.raw.getOrThrow('GEMINI_CHAT_MODEL') }
-  get geminiChatFallbackModel() { return this.raw.getOrThrow('GEMINI_CHAT_FALLBACK_MODEL') }
+  get geminiChatModel()               { return this.raw.getOrThrow('GEMINI_CHAT_MODEL') }
+  get geminiChatFallbackModel()       { return this.raw.getOrThrow('GEMINI_CHAT_FALLBACK_MODEL') }
+  get geminiChatSecondFallbackModel() { return this.raw.getOrThrow('GEMINI_CHAT_SECOND_FALLBACK_MODEL') }
   get chunkSize()     { return this.raw.getOrThrow('CHUNK_SIZE') }
   get chunkOverlap()  { return this.raw.getOrThrow('CHUNK_OVERLAP') }
 
@@ -55,6 +56,9 @@ export class AppConfig {
   get frontendUrl()    { return this.raw.getOrThrow('FRONTEND_URL') }
   get sessionSecret()  { return this.raw.getOrThrow('SESSION_SECRET') }
   get isProd()         { return this.raw.getOrThrow('NODE_ENV') === 'production' }
+
+  // ── Redis (resumable chat streams) ──
+  get redisUrl() { return this.raw.getOrThrow('REDIS_URL') }
 
   // ── SharePoint List watcher ──
   get sharepointHostname() { return this.raw.getOrThrow('SHAREPOINT_TENANT_HOSTNAME') }
