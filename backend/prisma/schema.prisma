@@ -106,13 +106,18 @@ model SyncAllowlist {
 }
 
 model Session {
-  id            String   @id
-  homeAccountId String   @map("home_account_id")
-  tokenCache    String   @map("token_cache")
+  id            String    @id
+  homeAccountId String    @map("home_account_id")
+  tokenCache    String    @map("token_cache")
   username      String?
   name          String?
-  expiresAt     DateTime @map("expires_at") @db.Timestamp(6)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamp(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  // Timestamp of the last successful MSAL acquireTokenSilent call for this
+  // session. Refreshed by the SessionGuard hybrid check (see SessionService.get)
+  // every AZURE_CHECK_INTERVAL_MS. Null on rows created before the check was
+  // added — treated as "never checked" so the next request triggers one.
+  lastAzureCheckAt DateTime? @map("last_azure_check_at") @db.Timestamp(6)
 
   @@map("sessions")
 }
