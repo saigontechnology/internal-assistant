@@ -23,8 +23,8 @@ export class AppConfig {
   get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
   get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
 
-  // ── Chat provider switch (OpenAI ↔ Gemini) ──
-  get chatProvider(): 'openai' | 'gemini' { return this.raw.getOrThrow('CHAT_PROVIDER') }
+  // ── Chat provider switch (OpenRouter ↔ Gemini ↔ OpenCode) ──
+  get chatProvider(): 'openai' | 'gemini' | 'opencode' { return this.raw.getOrThrow('CHAT_PROVIDER') }
   get googleApiKey(): string | undefined {
     const v = this.raw.get<string>('GOOGLE_GENERATIVE_AI_API_KEY')
     return v && v.length ? v : undefined
@@ -32,6 +32,16 @@ export class AppConfig {
   get geminiChatModel()               { return this.raw.getOrThrow('GEMINI_CHAT_MODEL') }
   get geminiChatFallbackModel()       { return this.raw.getOrThrow('GEMINI_CHAT_FALLBACK_MODEL') }
   get geminiChatSecondFallbackModel() { return this.raw.getOrThrow('GEMINI_CHAT_SECOND_FALLBACK_MODEL') }
+
+  // ── OpenCode gateway (chat only) ──
+  get opencodeApiBase() { return this.raw.getOrThrow('OPENCODE_API_BASE') }
+  get opencodeApiKey(): string | undefined {
+    const v = this.raw.get<string>('OPENCODE_API_KEY')
+    return v && v.length ? v : undefined
+  }
+  get opencodeChatModel()               { return this.raw.getOrThrow('OPENCODE_CHAT_MODEL') }
+  get opencodeChatFallbackModel()       { return this.raw.getOrThrow('OPENCODE_CHAT_FALLBACK_MODEL') }
+  get opencodeChatSecondFallbackModel() { return this.raw.getOrThrow('OPENCODE_CHAT_SECOND_FALLBACK_MODEL') }
   get chunkSize()     { return this.raw.getOrThrow('CHUNK_SIZE') }
   get chunkOverlap()  { return this.raw.getOrThrow('CHUNK_OVERLAP') }
 

@@ -11,6 +11,7 @@ import { type GoogleGenerativeAIProvider } from '@ai-sdk/google'
 import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
 import { buildGoogleClient } from '../config/google-client.js'
+import { buildOpencodeClient } from '../config/opencode-client.js'
 import {
   EmbeddingsService,
   type ViewerProfile,
@@ -69,9 +70,10 @@ Access control:
  * burst; short enough that we return to a higher tier once its quota
  * window rolls. Applied independently to each rung of the fallback
  * ladder so a 429 on the second fallback doesn't incorrectly extend
- * the first fallback's cooldown.
+ * the first fallback's cooldown. Shared between the Gemini and
+ * OpenCode ladders — same quota-window semantics.
  */
-const GEMINI_QUOTA_COOLDOWN_MS = 60_000
+const QUOTA_COOLDOWN_MS = 60_000
 
 /**
  * Compose the system prompt for a single request, appending a "Who you're
@@ -92,6 +94,7 @@ Who you're talking to:
 export class ChatService {
   private readonly openai: OpenAIProvider
   private readonly google: GoogleGenerativeAIProvider | null
+  private readonly opencode: OpenAIProvider | null
   /**
    * Per-model cooldown timers keyed by modelId. A missing / past value
    * means the model is healthy. Populated by handleStreamError when the
@@ -105,6 +108,7 @@ export class ChatService {
   ) {
     this.openai = buildOpenAIClient(this.config)
     this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
+    this.opencode = this.config.chatProvider === 'opencode' ? buildOpencodeClient(this.config) : null
   }
 
   /** The ordered Gemini ladder: primary → first fallback → second fallback. */
@@ -116,15 +120,25 @@ export class ChatService {
     ]
   }
 
+  /** The ordered OpenCode ladder: primary → first fallback → second fallback. */
+  private opencodeLadder(): string[] {
+    return [
+      this.config.opencodeChatModel,
+      this.config.opencodeChatFallbackModel,
+      this.config.opencodeChatSecondFallbackModel,
+    ]
+  }
+
   /**
    * Resolve the chat model based on CHAT_PROVIDER. Only the generation
-   * path is provider-switched; embeddings always use OpenAI.
+   * path is provider-switched; embeddings always use the OpenRouter-
+   * backed OpenAI client.
    *
-   * For Gemini: walk the fallback ladder and pick the first rung whose
-   * cooldown has expired. If every rung is still cooling (rare — would
-   * mean all three tiers took a 429 within the same 60s window), fall
-   * through to the last rung anyway; hitting it and taking another 429
-   * is still better than surfacing a hard error.
+   * For Gemini and OpenCode: walk the fallback ladder and pick the first
+   * rung whose cooldown has expired. If every rung is still cooling
+   * (rare — would mean all three tiers took a 429 within the same 60s
+   * window), fall through to the last rung anyway; hitting it and
+   * taking another 429 is still better than surfacing a hard error.
    */
   private resolveChatModel(): { model: LanguageModel; modelId: string } {
     if (this.config.chatProvider === 'gemini') {
@@ -137,29 +151,53 @@ export class ChatService {
       const modelId = healthy ?? ladder[ladder.length - 1]!
       return { model: this.google(modelId), modelId }
     }
+    if (this.config.chatProvider === 'opencode') {
+      if (!this.opencode) {
+        throw new Error('CHAT_PROVIDER=opencode but OpenCode client was not initialized')
+      }
+      const now = Date.now()
+      const ladder = this.opencodeLadder()
+      const healthy = ladder.find((id) => (this.cooldowns.get(id) ?? 0) <= now)
+      const modelId = healthy ?? ladder[ladder.length - 1]!
+      return { model: this.opencode.chat(modelId), modelId }
+    }
     return { model: this.openai.chat(this.config.chatModel), modelId: this.config.chatModel }
   }
 
   /**
-   * Inspect a streamText error and, when it looks like a Gemini quota
-   * hit, arm the cooldown for the SPECIFIC model that emitted it. The
-   * next resolveChatModel() call will then skip that rung and use the
-   * next one down. Only extends the timer — never shortens it when a
-   * second 429 lands while cooling.
+   * Inspect a streamText error and, when it looks like a quota hit,
+   * arm the cooldown for the SPECIFIC model that emitted it. The next
+   * resolveChatModel() call will then skip that rung and use the next
+   * one down. Only extends the timer — never shortens it when a second
+   * 429 lands while cooling.
+   *
+   * For OpenCode a 429 may come from the gateway itself OR the upstream
+   * provider; we don't try to distinguish here — same 60s cooldown
+   * either way. See docs/opencode-migration-plan.md §5.
    */
   private handleStreamError(err: unknown, modelId: string): void {
-    if (this.config.chatProvider !== 'gemini') return
+    const provider = this.config.chatProvider
+
+    // Always surface the underlying error to the backend logs — the SDK
+    // streams a sanitized "An error occurred." to the client, so this is
+    // the only place we get to see what actually broke.
+    console.error(
+      `[chat] streamText error (provider=${provider}, model=${modelId}):`,
+      describeStreamError(err),
+    )
+
+    if (provider !== 'gemini' && provider !== 'opencode') return
     if (!isRateLimitError(err)) return
-    const until = Date.now() + GEMINI_QUOTA_COOLDOWN_MS
+    const until = Date.now() + QUOTA_COOLDOWN_MS
     const prev = this.cooldowns.get(modelId) ?? 0
     if (until > prev) this.cooldowns.set(modelId, until)
-    const ladder = this.geminiLadder()
+    const ladder = provider === 'gemini' ? this.geminiLadder() : this.opencodeLadder()
     console.warn(
       JSON.stringify({
-        event: 'gemini_quota_tripped',
+        event: `${provider}_quota_tripped`,
         trippedModel: modelId,
         tier: ladder.indexOf(modelId), // 0 = primary, 1 = first fallback, 2 = second fallback
-        cooldownMs: GEMINI_QUOTA_COOLDOWN_MS,
+        cooldownMs: QUOTA_COOLDOWN_MS,
       }),
     )
   }
@@ -219,10 +257,40 @@ export class ChatService {
 
 /**
  * Best-effort detection of a rate-limit / quota response. Google returns
- * HTTP 429 with a `RESOURCE_EXHAUSTED` status; the AI SDK wraps this in
- * an APICallError but we probe defensively so we don't couple to that
- * shape.
+ * HTTP 429 with a `RESOURCE_EXHAUSTED` status; OpenCode surfaces upstream
+ * 429s as 429 too. The AI SDK wraps these in an APICallError but we probe
+ * defensively so we don't couple to that shape.
  */
+/**
+ * Best-effort dump of a streamText error. The SDK wraps upstream errors
+ * in APICallError which carries a `responseBody` — that's where the
+ * provider's actual JSON error lives (invalid model id, missing tool
+ * support, bad auth, etc.). Fall back to name/message/stack for anything
+ * that doesn't look like an APICallError.
+ */
+function describeStreamError(err: unknown): Record<string, unknown> {
+  if (!err || typeof err !== 'object') return { error: String(err) }
+  const anyErr = err as {
+    name?: string
+    message?: string
+    statusCode?: number
+    status?: number
+    url?: string
+    responseBody?: unknown
+    responseHeaders?: Record<string, string>
+    cause?: unknown
+    stack?: string
+  }
+  return {
+    name: anyErr.name,
+    message: anyErr.message,
+    statusCode: anyErr.statusCode ?? anyErr.status,
+    url: anyErr.url,
+    responseBody: anyErr.responseBody,
+    cause: anyErr.cause instanceof Error ? anyErr.cause.message : anyErr.cause,
+  }
+}
+
 function isRateLimitError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const anyErr = err as { statusCode?: number; status?: number; message?: string; name?: string }

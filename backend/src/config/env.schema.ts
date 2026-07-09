@@ -11,10 +11,11 @@ export const envSchema = z.object({
   CHAT_MODEL: z.string().default('deepseek/deepseek-v4-flash:free'),
   EMBEDDING_MODEL: z.string().default('nvidia/llama-nemotron-embed-vl-1b-v2:free'),
 
-  // Chat provider switch for the staged OpenAI → Gemini migration. Only
-  // affects the chat/generation path; the embedding pipeline stays on
-  // OpenAI regardless. See docs/gemini-migration-plan.md.
-  CHAT_PROVIDER: z.enum(['openai', 'gemini']).default('openai'),
+  // Chat provider switch. Only affects the chat/generation path; the
+  // embedding pipeline stays on OpenRouter (via the OPENAI_*  vars)
+  // regardless. See docs/gemini-migration-plan.md and
+  // docs/opencode-migration-plan.md.
+  CHAT_PROVIDER: z.enum(['openai', 'gemini', 'opencode']).default('openai'),
   // Google Generative AI credentials + model IDs. Required when
   // CHAT_PROVIDER=gemini; optional otherwise so local dev on the OpenAI
   // path doesn't need a Google key.
@@ -27,6 +28,21 @@ export const envSchema = z.object({
   // first fallback is also cooling down. Provides one more rung before we
   // surface a hard error to the user. See docs/gemini-migration-plan.md §5.
   GEMINI_CHAT_SECOND_FALLBACK_MODEL: z.string().default('gemini-3.1-flash'),
+
+  // OpenCode gateway (opencode.ai) — OpenAI-compatible endpoint used for
+  // chat/generation only. See docs/opencode-migration-plan.md.
+  // Base URL points at the parent path; @ai-sdk/openai appends
+  // /chat/completions itself.
+  OPENCODE_API_BASE: z.string().default('https://opencode.ai/zen/go/v1'),
+  // Required when CHAT_PROVIDER=opencode; optional otherwise so local dev
+  // on the openai/gemini paths doesn't need an OpenCode key.
+  OPENCODE_API_KEY: z.string().optional(),
+  // Model ids follow OpenCode's `<provider>/<model>` scheme. Defaults are
+  // starting points — validate against the current opencode.ai catalog
+  // before flipping production. See docs/opencode-migration-plan.md §2.
+  OPENCODE_CHAT_MODEL: z.string().default('zai/glm-5.2'),
+  OPENCODE_CHAT_FALLBACK_MODEL: z.string().default('moonshot/kimi-k2.6'),
+  OPENCODE_CHAT_SECOND_FALLBACK_MODEL: z.string().default('minimax/minimax-m3'),
   CHUNK_SIZE: z.coerce.number().default(1000),
   CHUNK_OVERLAP: z.coerce.number().default(200),
 
@@ -86,6 +102,13 @@ export const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['GOOGLE_GENERATIVE_AI_API_KEY'],
       message: 'GOOGLE_GENERATIVE_AI_API_KEY is required when CHAT_PROVIDER=gemini',
+    })
+  }
+  if (env.CHAT_PROVIDER === 'opencode' && !env.OPENCODE_API_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OPENCODE_API_KEY'],
+      message: 'OPENCODE_API_KEY is required when CHAT_PROVIDER=opencode',
     })
   }
 })
