@@ -6,6 +6,7 @@ import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { ParsersService } from './parsers.service.js'
+import { fileDateFromSourceMetadata } from './parse-file-date.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import { splitText } from './text-splitter.js'
@@ -187,6 +188,7 @@ export class DocumentsService {
    */
   async upsertFromSharepointList(args: SharepointUpsertArgs): Promise<SharepointUpsertOutcome> {
     const now = new Date()
+    const fileDate = fileDateFromSourceMetadata(args.sourceMetadata)
     const existing = await this.prisma.resource.findUnique({
       where: { sp_code_uk: { sharepointListId: args.listId, sharepointCode: args.code } },
       select: {
@@ -255,6 +257,7 @@ export class DocumentsService {
             data: {
               sharepointVersion: args.version,
               sourceMetadata: args.sourceMetadata as object,
+              fileDate,
               syncStatus: status,
               syncError: args.error ?? null,
               lastSyncAttempt: now,
@@ -272,6 +275,7 @@ export class DocumentsService {
             sharepointCode: args.code,
             sharepointVersion: args.version,
             sourceMetadata: args.sourceMetadata as object,
+            fileDate,
             syncStatus: status,
             syncError: args.error ?? null,
             lastSyncAttempt: now,
@@ -335,6 +339,7 @@ export class DocumentsService {
           sharepointCode: args.code,
           sharepointVersion: args.version,
           sourceMetadata: args.sourceMetadata as object,
+          fileDate,
           syncStatus: 'synced',
           syncError: null,
           lastSyncAttempt: now,

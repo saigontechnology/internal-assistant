@@ -42,6 +42,10 @@ model Resource {
   // a fresher copy exists but nobody with access has refreshed it yet.
   sharepointPendingVersion String? @map("sharepoint_pending_version")
   sourceMetadata    Json?     @map("source_metadata")
+  // Parsed from `sourceMetadata.date` (the free-text SP list "Date" column).
+  // Set on every write that touches sourceMetadata; NULL when the value can't
+  // be parsed. Column type is DATE — no time component.
+  fileDate          DateTime? @map("file_date") @db.Date
   syncStatus        String    @default("synced") @map("sync_status")
   syncError         String?   @map("sync_error")
   lastSyncAttempt   DateTime? @map("last_sync_attempt") @db.Timestamp(6)
