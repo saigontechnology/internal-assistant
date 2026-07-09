@@ -99,7 +99,13 @@ export function buildDocumentTools(
           const title = m.title as string | undefined
           const linkUrl = m.link_url as string | undefined
           const chunkIndex = m.chunk_index as string | undefined
-          const date = m.date as string | undefined
+          // Prefer the parsed ISO date (YYYY-MM-DD) so the agent can order
+          // conflicting documents by recency without having to reparse the
+          // upstream free-text ("23-Apr-25" vs "23-Apr-2025"). Fall back to
+          // the raw string only when parsing failed.
+          const fileDate = m.file_date as string | undefined
+          const rawDate = m.date as string | undefined
+          const date = fileDate ?? rawDate
 
           const display =
             code && version ? `${code} v${version}` :

@@ -170,6 +170,12 @@ export class EmbeddingsService {
         filename: string
         sharepoint_url: string | null
         source_metadata: Record<string, unknown> | null
+        // Parsed form of source_metadata.date — populated on every SP write
+        // by DocumentsService.upsertFromSharepointList. Null when the source
+        // value was missing or unparseable. Preferred over the raw string
+        // for date comparisons since the raw is free-text ("23-Apr-25",
+        // "23-Apr-2025", etc.) and not reliably orderable.
+        file_date: Date | null
         score: number
       }
       // Hybrid retrieval: rank candidates by vector cosine distance AND by
@@ -217,6 +223,7 @@ export class EmbeddingsService {
                r.filename,
                r.sharepoint_url,
                r.source_metadata,
+               r.file_date,
                f.score
         FROM fused f
         INNER JOIN embeddings e ON e.id = f.id
@@ -287,7 +294,15 @@ export class EmbeddingsService {
             code: typeof srcMd.code === 'string' ? srcMd.code : undefined,
             version: typeof srcMd.version === 'string' ? srcMd.version : undefined,
             title: typeof srcMd.title === 'string' ? srcMd.title : undefined,
+            // Raw free-text value from the SP "Date" column — kept for
+            // display fallback when file_date failed to parse.
             date: typeof srcMd.date === 'string' ? srcMd.date : undefined,
+            // Parsed ISO date (YYYY-MM-DD) — this is what the chat agent
+            // should use to compare recency across conflicting documents.
+            file_date:
+              r.file_date instanceof Date
+                ? r.file_date.toISOString().slice(0, 10)
+                : undefined,
           },
         }
       })
