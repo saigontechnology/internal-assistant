@@ -43,8 +43,9 @@ Each subdirectory is a Nest module wired in `app.module.ts`:
 - **`documents/`** — parsing (PDF, DOCX, XLSX, CSV, TXT, MD, OCR via `tesseract.js`), chunking (`text-splitter.ts`), and the `retrieveResources` / `listDocuments` tools exposed to the LLM (`document-tools.ts`).
 - **`embeddings/`** — writes and queries the `halfvec(2048)` vector column. All reads/writes go through raw SQL (`prisma.$queryRaw`) because Prisma has no first-class pgvector type.
 - **`sharepoint/`** — Graph API wrapper for browsing sites/drives/files.
-- **`sharepoint-list/`** — the **list watcher** feature. A **registry list** in SharePoint (default name `Document Distribution List`) maps human list names → target list URLs; every registry row becomes a `DistributionList` row and its `Link` column dereferences to the real list we sync. See `docs/multi-list-watcher-plan.md`.
+- **`sharepoint-list/`** — the **list watcher** feature. Each `DistributionList` row names a target SharePoint list by URL; the watcher dereferences it and syncs its rows into `Resource`. Rows are managed from the admin portal — see "SharePoint list watcher" below.
 - **`user-permission/`** — job-profile ingest (title + department) driving role-based access to documents. Weekly resync via `USER_SYNC_INTERVAL_DAYS`; while a user's own profile is mid-scan or unknown, the chat filter falls back to `DEFAULT_JOB_TITLE` / `DEFAULT_DEPARTMENT`.
+- **`admin/`** — the `/api/admin/*` surface behind `AdminGuard`: user management, document management, CRUD over the distribution lists, and the OpenCode chat-model picker. See "Admin portal" below.
 - **`prisma/`** — the `PrismaService`, plus the schema at `backend/prisma/schema.prisma`.
 
 ### Chat provider switch
@@ -52,6 +53,10 @@ Each subdirectory is a Nest module wired in `app.module.ts`:
 `CHAT_PROVIDER` (env) picks the chat/generation client — `openai` (default, actually points at OpenRouter — see below), `gemini` (`@ai-sdk/google`), or `opencode` (opencode.ai gateway via `@ai-sdk/openai` with a custom `baseURL`). **Only chat is switched**; the embeddings pipeline always uses the OpenRouter-backed OpenAI client regardless of the switch, because re-embedding the corpus would invalidate the pgvector index.
 
 For gemini and opencode, `chat.service.ts` walks a **fallback ladder** (primary → first → second) with per-model 60s cooldowns triggered by 429s. `resolveChatModel()` picks the first non-cooling rung; `handleStreamError()` arms the cooldown for the exact model that just streamed. See `docs/gemini-migration-plan.md` and `docs/opencode-migration-plan.md`.
+
+The **OpenCode ladder is admin-editable at runtime** and the env vars are only a fallback. `app_settings` rows (`opencode.chat_model`, `.chat_fallback_model`, `.chat_second_fallback_model`) win over `OPENCODE_CHAT_*_MODEL` whenever they exist; a rung with no row falls back to its env var. `ChatSettingsService` caches the resolved ladder for 30s, so a save takes effect on new chats within that window. Admins pick from the live catalog at `/admin/chat-model`, and the write path validates every rung against it. The Gemini ladder is still env-only.
+
+**Model id trap**: OpenCode's catalog (`GET $OPENCODE_API_BASE/models`, servable unauthenticated) returns **bare** ids — `glm-5.2`, `kimi-k2.6`, `minimax-m3`. The `<provider>/<model>` form (`zai/glm-5.2`) is *not* accepted; the original env defaults used it and were wrong on all three rungs.
 
 **Historical naming trap**: `OPENAI_API_BASE` defaults to `https://openrouter.ai/api/v1` and `CHAT_MODEL` / `EMBEDDING_MODEL` are OpenRouter slugs. "OpenAI" in this repo has meant "OpenRouter" for a while. `OPENAI_HOST_OVERRIDE` is a workaround for a self-hosted 9router proxy that gates on the `Host` header — leave it unset in local dev.
 
@@ -67,9 +72,27 @@ React 19 + Vite + shadcn/ui + Tailwind v4. Chat UI uses `@ai-sdk/react` `useChat
 
 ### SharePoint list watcher (subtle bit)
 
-Documents are not uploaded manually — they're synced from SharePoint. The **registry list** is a SharePoint list of lists: each row's `Link` column points at a *target* SharePoint list, and each target list's rows become `Resource` rows in Postgres. `list-watcher.service.ts` periodically walks the registry, resolves each link, and fans out to per-list sync. `SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS>0` enables incremental fetch based on `lastModifiedDateTime`; `0` means full sync each run (current default).
+Documents are not uploaded manually — they're synced from SharePoint. **The `distribution_lists` table is the source of truth**: each row holds a `listUrl` pointing at a target SharePoint list, and that list's rows become `Resource` rows in Postgres. `list-watcher.service.ts` walks the enabled rows, dereferences each `listUrl` to a `(siteId, targetListId)` pair (cached on the row), and fans out to per-list sync. `SHAREPOINT_REGISTRY_INCREMENTAL_WINDOW_DAYS>0` enables incremental fetch based on `lastModifiedDateTime`; `0` means full sync each run (current default).
+
+Rows are managed at `/admin/links`. **A fresh database syncs nothing until an admin adds a list** (or runs `POST /api/admin/distribution-lists/import-registry` once). This replaced an older design where a SharePoint **registry list** (`SHAREPOINT_LIST_NAME`, default `Document Distribution List`) was walked on every sync and each of its rows became a `DistributionList` row. That env var now only feeds the one-shot import endpoint; `distribution_lists.registry_list_id` / `registry_item_id` survive as nullable provenance columns. `docs/multi-list-watcher-plan.md` describes the old design.
+
+Two traps when touching the sync path:
+- `liveTargetListIds()` (the input to `demoteOrphanedSharepointRows`) must be derived from **stored** `targetListId`s of enabled rows — never from "what this run resolved". Both `ListWatcherService` and `JobProfileSyncService` call it. Building it from per-run results means a transient Graph failure, or a job-profile scan run by a user who lacks access to a site, silently demotes every resource in that list.
+- `JobProfileSyncService` no longer bootstraps `distribution_lists` from the registry on first login; it reads them and skips rows with an unresolved target.
 
 Files may be indexed as **metadata-only** (`syncStatus=pending_access`) when the current syncing user can't resolve the file — permissions get retried on future syncs. Do not assume `Resource` rows always have embeddings.
+
+### Admin portal
+
+Frontend at `/admin/*` (react-router; the chat app stays mounted at `*` and is untouched). Backend at `/api/admin/*`, every controller behind `AdminGuard`.
+
+`UserPermission.role` (`admin` | `user`) is the only role concept. Bootstrap with `ADMIN_EMAILS` (comma-separated) — those emails are promoted at boot and on login. **Promotion is one-way**: dropping someone from `ADMIN_EMAILS` does not demote them. The boot-time promotion deliberately does *not* create rows, because `user_permissions.email` keeps MSAL's mixed-case UPN while `ADMIN_EMAILS` is lowercased — creating a row would produce a second row for the same human. Users who've never signed in get promoted on first login instead.
+
+Two other invariants worth knowing:
+- `UserPermission.profileOverride` — when an admin pins a `(jobTitle, department)`, `UserPermissionService.upsertProfile` (the sole Azure AD write path) leaves the normalized join keys alone so the override survives login and the weekly resync.
+- `UserPermission.isActive` — `SessionGuard` checks it on every authed request and deletes the session when false; `AuthService.completeLogin` rejects at the door. A missing `user_permissions` row means "active" (first-login users).
+
+`GET /api/documents` is now authenticated (was `@Public()`); `POST /api/documents/upload` and `DELETE /api/documents/:id` are admin-only.
 
 ### Auth model
 
@@ -79,8 +102,8 @@ MSAL delegated auth (Entra ID). Backend reads `AZURE_CLIENT_ID`, `AZURE_TENANT_I
 
 Under `docs/`:
 - `setup.md` — Neon + Entra ID app registration walkthrough
-- `api.md` — HTTP endpoint reference
+- `api.md` — HTTP endpoint reference (predates `/api/admin/*`)
 - `role-based-access-plan.md` — job-profile driven access filtering
 - `stream-resumption-plan.md` — Redis-backed resumable chat SSE
-- `multi-list-watcher-plan.md` — SharePoint registry list design
+- `multi-list-watcher-plan.md` — ⚠️ describes the retired SharePoint-registry design; the DB now owns distribution lists
 - `gemini-migration-plan.md` / `opencode-migration-plan.md` — chat-provider switch design

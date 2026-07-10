@@ -4,6 +4,8 @@ import { AppConfig } from '../config/app-config.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { GraphMeService } from '../user-permission/graph-me.service.js'
 import { UserPermissionService } from '../user-permission/user-permission.service.js'
+import { AdminRoleService } from './admin-role.service.js'
+import { AdminGuard } from './admin.guard.js'
 import { AuthController } from './auth.controller.js'
 import { AuthService } from './auth.service.js'
 import { LoginEventBus } from './login-event-bus.js'
@@ -66,6 +68,7 @@ import { SyncAllowlistService } from './sync-allowlist.service.js'
         GraphMeService,
         UserPermissionService,
         LoginEventBus,
+        AdminRoleService,
       ],
       useFactory: (
         c: AppConfig,
@@ -75,15 +78,30 @@ import { SyncAllowlistService } from './sync-allowlist.service.js'
         g: GraphMeService,
         u: UserPermissionService,
         b: LoginEventBus,
-      ) => new AuthService(c, m, s, k, g, u, b),
+        a: AdminRoleService,
+      ) => new AuthService(c, m, s, k, g, u, b, a),
+    },
+    {
+      provide: AdminRoleService,
+      inject: [PrismaService, AppConfig],
+      useFactory: (p: PrismaService, c: AppConfig) => new AdminRoleService(p, c),
     },
     {
       provide: SessionGuard,
-      inject: [Reflector, SessionCookieService, SessionService],
-      useFactory: (r: Reflector, c: SessionCookieService, s: SessionService) =>
-        new SessionGuard(r, c, s),
+      inject: [Reflector, SessionCookieService, SessionService, AdminRoleService],
+      useFactory: (
+        r: Reflector,
+        c: SessionCookieService,
+        s: SessionService,
+        a: AdminRoleService,
+      ) => new SessionGuard(r, c, s, a),
     },
     { provide: APP_GUARD, useExisting: SessionGuard },
+    {
+      provide: AdminGuard,
+      inject: [AdminRoleService],
+      useFactory: (a: AdminRoleService) => new AdminGuard(a),
+    },
     {
       provide: SyncAllowlistService,
       inject: [PrismaService],
@@ -98,6 +116,8 @@ import { SyncAllowlistService } from './sync-allowlist.service.js'
     UserPermissionService,
     GraphMeService,
     LoginEventBus,
+    AdminRoleService,
+    AdminGuard,
   ],
 })
 export class AuthModule {}

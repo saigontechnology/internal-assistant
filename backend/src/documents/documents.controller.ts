@@ -11,6 +11,7 @@ import {
   Req,
   Res,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
@@ -18,15 +19,19 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import 'multer'
 import type { Request, Response } from 'express'
 import type { Session } from '@prisma/client'
-import { Public } from '../auth/public.decorator.js'
+import { AdminGuard } from '../auth/admin.guard.js'
 import { DocumentsService } from './documents.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import type { ImportRequest } from '../common/types.js'
 
 /**
- * `/api/documents/*`. Most routes go through SessionGuard like the rest of
- * the protected surface; the `/upload` endpoint also reads the multipart body
- * via FileInterceptor (multer under the hood).
+ * `/api/documents/*`. Every route goes through the global SessionGuard;
+ * mutations additionally require an admin. The `/upload` endpoint reads the
+ * multipart body via FileInterceptor (multer under the hood).
+ *
+ * These paths used to be `@Public()` to match the legacy Hono contract. They
+ * are now authenticated — the frontend already called them from an authed
+ * session, so only out-of-band consumers are affected.
  */
 @Controller('documents')
 export class DocumentsController {
@@ -35,20 +40,15 @@ export class DocumentsController {
     @Inject(SharepointService) private readonly sharepoint: SharepointService,
   ) {}
 
-  /**
-   * @Public on the read/upload/delete paths matches the legacy Hono contract
-   * (only /import was authenticated). The frontend always calls these from
-   * an authed session anyway; reinstating auth here is a separate PR.
-   */
-  @Public()
+  /** Any signed-in user. Results are job-profile filtered downstream. */
   @Get('/')
   async list() {
     const documents = await this.documents.listDocuments()
     return { documents }
   }
 
-  @Public()
   @Post('upload')
+  @UseGuards(AdminGuard)
   @UseInterceptors(FileInterceptor('file'))
   async upload(@UploadedFile() file: Express.Multer.File | undefined, @Res() res: Response) {
     if (!file) {
@@ -92,8 +92,8 @@ export class DocumentsController {
     res.status(errors.length > 0 ? 207 : 200).json({ imported: results, errors })
   }
 
-  @Public()
   @Delete(':docId')
+  @UseGuards(AdminGuard)
   async remove(@Param('docId') docId: string) {
     if (!docId) throw new BadRequestException('docId required')
     try {

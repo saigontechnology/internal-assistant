@@ -67,13 +67,31 @@ export class AppConfig {
   get sessionSecret()  { return this.raw.getOrThrow('SESSION_SECRET') }
   get isProd()         { return this.raw.getOrThrow('NODE_ENV') === 'production' }
 
+  // ── Admin portal ──
+  /**
+   * Bootstrap admins, normalized to lowercase. These emails are promoted to
+   * role='admin' at boot and on every login; the promotion is one-way, so an
+   * admin granted through the portal survives being dropped from this list.
+   */
+  get adminEmails(): string[] {
+    return this.raw
+      .getOrThrow<string>('ADMIN_EMAILS')
+      .split(',')
+      .map((e) => e.trim().toLocaleLowerCase())
+      .filter((e) => e.length > 0)
+  }
+
   // ── Redis (resumable chat streams) ──
   get redisUrl() { return this.raw.getOrThrow('REDIS_URL') }
 
   // ── SharePoint List watcher ──
   get sharepointHostname() { return this.raw.getOrThrow('SHAREPOINT_TENANT_HOSTNAME') }
   get sharepointSitePath() { return this.raw.getOrThrow('SHAREPOINT_SITE_PATH') }
-  /** Name of the registry list (case-insensitive match). */
+  /**
+   * Name of the legacy registry list (case-insensitive match). No longer read
+   * by the watcher — the DB owns distribution lists now. Only the one-shot
+   * `POST /api/admin/distribution-lists/import-registry` endpoint uses this.
+   */
   get sharepointRegistryListName() { return this.raw.getOrThrow('SHAREPOINT_LIST_NAME') }
   /** Days of slop for incremental sync (0 = full sync). */
   get sharepointRegistryIncrementalWindowDays(): number {

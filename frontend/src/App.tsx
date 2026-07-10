@@ -1,8 +1,10 @@
+import { Route, Routes } from "react-router-dom"
 import { Header } from "@/components/layout/header"
 import { Sidebar } from "@/components/layout/sidebar"
 import { ChatPanel } from "@/components/chat/chat-panel"
 import { SharePointBrowser } from "@/components/documents/sharepoint-browser"
 import { LoginPage } from "@/components/auth/login-page"
+import { AdminApp } from "@/components/admin/admin-app"
 import { ConversationProvider } from "@/lib/conversations"
 import { AppViewProvider, useAppView } from "@/lib/app-view"
 import { useAuth } from "@/lib/auth"
@@ -56,5 +58,14 @@ export default function App() {
     )
   }
 
-  return isAuthenticated ? <AuthedApp /> : <LoginPage />
+  if (!isAuthenticated) return <LoginPage />
+
+  // The chat app keeps its own context-driven view switching and stays mounted
+  // at every non-admin path, so no existing URL behavior changes.
+  return (
+    <Routes>
+      <Route path="/admin/*" element={<AdminApp />} />
+      <Route path="*" element={<AuthedApp />} />
+    </Routes>
+  )
 }

@@ -37,12 +37,15 @@ export const envSchema = z.object({
   // Required when CHAT_PROVIDER=opencode; optional otherwise so local dev
   // on the openai/gemini paths doesn't need an OpenCode key.
   OPENCODE_API_KEY: z.string().optional(),
-  // Model ids follow OpenCode's `<provider>/<model>` scheme. Defaults are
-  // starting points — validate against the current opencode.ai catalog
-  // before flipping production. See docs/opencode-migration-plan.md §2.
-  OPENCODE_CHAT_MODEL: z.string().default('zai/glm-5.2'),
-  OPENCODE_CHAT_FALLBACK_MODEL: z.string().default('moonshot/kimi-k2.6'),
-  OPENCODE_CHAT_SECOND_FALLBACK_MODEL: z.string().default('minimax/minimax-m3'),
+  // Model ids are the **bare** ids the gateway's `GET /models` returns
+  // (`glm-5.2`), NOT the `<provider>/<model>` form (`zai/glm-5.2`) — the
+  // prefixed form is not in the catalog and fails at stream time. These are
+  // only the fallback defaults: admins pick the live ladder at
+  // /admin/chat-model, which validates against the catalog. See
+  // chat/chat-settings.service.ts and docs/opencode-migration-plan.md §2.
+  OPENCODE_CHAT_MODEL: z.string().default('glm-5.2'),
+  OPENCODE_CHAT_FALLBACK_MODEL: z.string().default('kimi-k2.6'),
+  OPENCODE_CHAT_SECOND_FALLBACK_MODEL: z.string().default('minimax-m3'),
   CHUNK_SIZE: z.coerce.number().default(1000),
   CHUNK_OVERLAP: z.coerce.number().default(200),
 
@@ -60,6 +63,13 @@ export const envSchema = z.object({
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   SESSION_SECRET: z.string().min(1).default('dev-insecure-secret-change-me'),
   NODE_ENV: z.enum(['development', 'production']).default('development'),
+
+  // Comma-separated bootstrap admins for the /admin portal, e.g.
+  // "alice@corp.com,bob@corp.com". These are promoted to role='admin' at boot
+  // and on every login. Promotion is one-way: removing an email here does NOT
+  // demote them — use the portal for that. Empty = no bootstrap admin, in
+  // which case the first admin must be set directly in the DB.
+  ADMIN_EMAILS: z.string().default(''),
 
   // Redis backing store for resumable-stream. Publishes chat SSE chunks so a
   // reconnecting client (page refresh, network drop) can pick up mid-stream

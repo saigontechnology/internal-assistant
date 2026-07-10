@@ -54,6 +54,20 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       CHUNK_SIZE: ${CHUNK_SIZE}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP}
+      # Chat-provider switch. backend/.env is .dockerignore'd, so anything the
+      # backend reads must be listed here — the container never sees that file.
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-openai}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash-lite}
+      GEMINI_CHAT_FALLBACK_MODEL: ${GEMINI_CHAT_FALLBACK_MODEL:-gemini-2.5-flash}
+      GEMINI_CHAT_SECOND_FALLBACK_MODEL: ${GEMINI_CHAT_SECOND_FALLBACK_MODEL:-gemini-3.1-flash}
+      OPENCODE_API_BASE: ${OPENCODE_API_BASE:-https://opencode.ai/zen/go/v1}
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
+      # Fallback ladder only — admins pin the live models at /admin/chat-model,
+      # and those DB rows win over these. Bare catalog ids, not "zai/glm-5.2".
+      OPENCODE_CHAT_MODEL: ${OPENCODE_CHAT_MODEL:-glm-5.2}
+      OPENCODE_CHAT_FALLBACK_MODEL: ${OPENCODE_CHAT_FALLBACK_MODEL:-kimi-k2.6}
+      OPENCODE_CHAT_SECOND_FALLBACK_MODEL: ${OPENCODE_CHAT_SECOND_FALLBACK_MODEL:-minimax-m3}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
       AZURE_TENANT_ID: ${AZURE_TENANT_ID}
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}

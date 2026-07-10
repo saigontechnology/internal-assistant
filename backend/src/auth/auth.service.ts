@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import { AppConfig } from '../config/app-config.service.js'
 import { GraphMeService } from '../user-permission/graph-me.service.js'
 import { UserPermissionService } from '../user-permission/user-permission.service.js'
+import { AdminRoleService } from './admin-role.service.js'
 import { LoginEventBus } from './login-event-bus.js'
 import { MsalService } from './msal.service.js'
 import { SessionCookieService } from './session-cookie.service.js'
@@ -20,6 +21,7 @@ export class AuthService {
     private readonly graphMe: GraphMeService,
     private readonly perms: UserPermissionService,
     private readonly loginEvents: LoginEventBus,
+    private readonly roles: AdminRoleService,
   ) {}
 
   /** Returns the Microsoft auth-code URL to redirect to. */
@@ -39,6 +41,7 @@ export class AuthService {
     this.cookies.clearTx(res)
 
     const failUrl = `${this.config.frontendUrl}/?auth=error`
+    const deactivatedUrl = `${this.config.frontendUrl}/?auth=deactivated`
 
     if (!query.code || !tx) return failUrl
     if (!query.state || query.state !== tx.state) return failUrl
@@ -49,6 +52,13 @@ export class AuthService {
         codeVerifier: tx.verifier,
       })
       const account = result.account!
+
+      // Turn a deactivated user away before minting a session. SessionGuard
+      // also enforces this on every request, for accounts deactivated
+      // mid-session.
+      const existing = await this.roles.getAccountState(account.username)
+      if (existing && !existing.isActive) return deactivatedUrl
+
       const id = await this.sessions.create({
         homeAccountId: account.homeAccountId,
         tokenCache,
@@ -75,6 +85,9 @@ export class AuthService {
           // need to handle a missing row.
           await this.perms.ensure(email).catch(() => {})
         }
+        // Now that the row is guaranteed to exist, apply ADMIN_EMAILS. This is
+        // what promotes a bootstrap admin who has never signed in before.
+        await this.roles.promoteIfBootstrapAdmin(email).catch(() => {})
       }
 
       // Fire the post-login event so the per-profile sync starts NOW, not

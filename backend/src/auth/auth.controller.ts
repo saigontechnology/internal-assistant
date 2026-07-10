@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, Post, Query, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
+import { AdminRoleService } from './admin-role.service.js'
 import { AuthService } from './auth.service.js'
 import { Public } from './public.decorator.js'
 import { SessionCookieService } from './session-cookie.service.js'
@@ -13,6 +14,7 @@ export class AuthController {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(SessionCookieService) private readonly cookies: SessionCookieService,
     @Inject(SyncAllowlistService) private readonly allowlist: SyncAllowlistService,
+    @Inject(AdminRoleService) private readonly roles: AdminRoleService,
   ) {}
 
   @Public()
@@ -46,10 +48,23 @@ export class AuthController {
     if (!id) return { authenticated: false }
     const session = await this.sessions.get(id)
     if (!session) return { authenticated: false }
+
+    const state = await this.roles.getAccountState(session.username)
+    // Deactivated mid-session: report signed-out so the SPA drops to login
+    // rather than rendering a shell whose every API call 403s.
+    if (state && !state.isActive) return { authenticated: false }
+
     const isAllowedToSync = await this.allowlist.isAllowed(session.username)
+    const role = state?.role ?? 'user'
     return {
       authenticated: true,
-      user: { username: session.username, name: session.name, isAllowedToSync },
+      user: {
+        username: session.username,
+        name: session.name,
+        isAllowedToSync,
+        role,
+        isAdmin: role === 'admin',
+      },
     }
   }
 

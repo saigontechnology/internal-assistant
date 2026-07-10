@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/admin_chat_model_picker]
   workflow_dispatch:
     inputs:
       force:
@@ -82,9 +82,13 @@ jobs:
             set -euo pipefail
             cd "$APP_DIR"
 
-            echo "==> Fetching latest main"
-            git fetch --prune origin main
-            git reset --hard "origin/main"
+            # Deploy the exact commit that triggered this run, not whatever
+            # main happens to point at — otherwise a push to any non-main
+            # branch in `on.push.branches` would redeploy main's code.
+            # Detached HEAD is intentional; the VPS checkout is disposable.
+            echo "==> Checking out $GIT_REF"
+            git fetch --prune --force origin
+            git reset --hard "$GIT_REF"
 
             echo "==> Writing .env (root + backend) from GitHub vars/secrets"
             umask 077

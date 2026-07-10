@@ -12,6 +12,7 @@ import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
 import { buildGoogleClient } from '../config/google-client.js'
 import { buildOpencodeClient } from '../config/opencode-client.js'
+import { ChatSettingsService } from './chat-settings.service.js'
 import {
   EmbeddingsService,
   type ViewerProfile,
@@ -109,6 +110,7 @@ export class ChatService {
   constructor(
     private readonly config: AppConfig,
     private readonly embeddings: EmbeddingsService,
+    private readonly settings: ChatSettingsService,
   ) {
     this.openai = buildOpenAIClient(this.config)
     this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
@@ -124,13 +126,22 @@ export class ChatService {
     ]
   }
 
-  /** The ordered OpenCode ladder: primary → first fallback → second fallback. */
-  private opencodeLadder(): string[] {
-    return [
-      this.config.opencodeChatModel,
-      this.config.opencodeChatFallbackModel,
-      this.config.opencodeChatSecondFallbackModel,
-    ]
+  /**
+   * The ordered OpenCode ladder: primary → first fallback → second fallback.
+   * Unlike the Gemini ladder this is admin-editable at runtime (see
+   * chat-settings.service.ts), so it's a DB read rather than an env read.
+   * Each rung falls back to its env var when no override is stored.
+   */
+  private async opencodeLadder(): Promise<string[]> {
+    const ladder = await this.settings.opencodeLadder()
+    return [ladder.primary, ladder.fallback, ladder.secondFallback]
+  }
+
+  /** Pick the first rung whose cooldown has expired, else the last rung. */
+  private pickHealthyRung(ladder: string[]): string {
+    const now = Date.now()
+    const healthy = ladder.find((id) => (this.cooldowns.get(id) ?? 0) <= now)
+    return healthy ?? ladder[ladder.length - 1]!
   }
 
   /**
@@ -143,29 +154,34 @@ export class ChatService {
    * (rare — would mean all three tiers took a 429 within the same 60s
    * window), fall through to the last rung anyway; hitting it and
    * taking another 429 is still better than surfacing a hard error.
+   *
+   * Returns the resolved ladder alongside the model so onError can report
+   * which tier tripped without re-reading it (the OpenCode ladder is async,
+   * and an admin could have changed it in between).
    */
-  private resolveChatModel(): { model: LanguageModel; modelId: string } {
+  private async resolveChatModel(): Promise<{
+    model: LanguageModel
+    modelId: string
+    ladder: string[]
+  }> {
     if (this.config.chatProvider === 'gemini') {
       if (!this.google) {
         throw new Error('CHAT_PROVIDER=gemini but Google client was not initialized')
       }
-      const now = Date.now()
       const ladder = this.geminiLadder()
-      const healthy = ladder.find((id) => (this.cooldowns.get(id) ?? 0) <= now)
-      const modelId = healthy ?? ladder[ladder.length - 1]!
-      return { model: this.google(modelId), modelId }
+      const modelId = this.pickHealthyRung(ladder)
+      return { model: this.google(modelId), modelId, ladder }
     }
     if (this.config.chatProvider === 'opencode') {
       if (!this.opencode) {
         throw new Error('CHAT_PROVIDER=opencode but OpenCode client was not initialized')
       }
-      const now = Date.now()
-      const ladder = this.opencodeLadder()
-      const healthy = ladder.find((id) => (this.cooldowns.get(id) ?? 0) <= now)
-      const modelId = healthy ?? ladder[ladder.length - 1]!
-      return { model: this.opencode.chat(modelId), modelId }
+      const ladder = await this.opencodeLadder()
+      const modelId = this.pickHealthyRung(ladder)
+      return { model: this.opencode.chat(modelId), modelId, ladder }
     }
-    return { model: this.openai.chat(this.config.chatModel), modelId: this.config.chatModel }
+    const modelId = this.config.chatModel
+    return { model: this.openai.chat(modelId), modelId, ladder: [modelId] }
   }
 
   /**
@@ -179,7 +195,7 @@ export class ChatService {
    * provider; we don't try to distinguish here — same 60s cooldown
    * either way. See docs/opencode-migration-plan.md §5.
    */
-  private handleStreamError(err: unknown, modelId: string): void {
+  private handleStreamError(err: unknown, modelId: string, ladder: string[]): void {
     const provider = this.config.chatProvider
 
     // Always surface the underlying error to the backend logs — the SDK
@@ -195,7 +211,6 @@ export class ChatService {
     const until = Date.now() + QUOTA_COOLDOWN_MS
     const prev = this.cooldowns.get(modelId) ?? 0
     if (until > prev) this.cooldowns.set(modelId, until)
-    const ladder = provider === 'gemini' ? this.geminiLadder() : this.opencodeLadder()
     console.warn(
       JSON.stringify({
         event: `${provider}_quota_tripped`,
@@ -245,7 +260,7 @@ export class ChatService {
     // Capture the resolved modelId so onError can attribute a 429 to the
     // exact rung that streamed (not e.g. the primary when we were actually
     // running the second fallback).
-    const { model, modelId } = this.resolveChatModel()
+    const { model, modelId, ladder } = await this.resolveChatModel()
     const result = streamText({
       model,
       system: buildSystemPrompt(opts.viewer),
@@ -253,7 +268,7 @@ export class ChatService {
       tools: this.buildTools(opts),
       stopWhen: stepCountIs(4),
       abortSignal: opts.abortSignal,
-      onError: ({ error }) => this.handleStreamError(error, modelId),
+      onError: ({ error }) => this.handleStreamError(error, modelId, ladder),
     })
     return { result, originalMessages: messages }
   }

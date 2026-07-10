@@ -29,8 +29,13 @@ export function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("auth") === "error") {
-      setError("Sign-in failed. Please try again.");
+    const auth = params.get("auth");
+    if (auth === "error" || auth === "deactivated") {
+      setError(
+        auth === "deactivated"
+          ? "This account has been deactivated. Contact an administrator."
+          : "Sign-in failed. Please try again.",
+      );
       params.delete("auth");
       const qs = params.toString();
       window.history.replaceState(

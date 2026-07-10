@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { AuthModule } from '../auth/auth.module.js'
 import { AppConfig } from '../config/app-config.service.js'
 import { EmbeddingsModule } from '../embeddings/embeddings.module.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
@@ -10,7 +11,8 @@ import { DocumentsService } from './documents.service.js'
 import { ParsersService } from './parsers.service.js'
 
 @Module({
-  imports: [EmbeddingsModule, SharepointModule],
+  // AuthModule supplies AdminGuard for the upload/delete routes.
+  imports: [EmbeddingsModule, SharepointModule, AuthModule],
   controllers: [DocumentsController],
   providers: [
     { provide: ParsersService, useFactory: () => new ParsersService() },

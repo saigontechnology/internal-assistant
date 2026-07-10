@@ -37,12 +37,20 @@ export class UserPermissionService {
    * Upsert the user's profile from a fresh /me call. Normalizes both fields
    * and preserves the original casing on `displayJobTitle` / `displayDepartment`
    * for UI use.
+   *
+   * This is the single Azure AD write path for (jobTitle, department). When an
+   * admin has pinned the profile (`profileOverride`), the normalized join keys
+   * are left alone so the override survives login and the weekly resync — the
+   * row is returned untouched.
    */
   async upsertProfile(
     email: string,
     rawJobTitle: string | null | undefined,
     rawDepartment: string | null | undefined,
   ): Promise<UserPermission> {
+    const existing = await this.findByEmail(email)
+    if (existing?.profileOverride) return existing
+
     const jobTitle = normalizeProfileField(rawJobTitle)
     const department = normalizeProfileField(rawDepartment)
     const displayJobTitle = (rawJobTitle ?? '').trim()

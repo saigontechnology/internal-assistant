@@ -89,40 +89,27 @@ export class JobProfileSyncService {
     const scanStartedAt = new Date()
 
     try {
-      // Bootstrap path: walk the registry with THIS user's token, upserting
-      // distribution_lists rows as we go. This makes the per-profile scan
-      // self-sufficient — on first login (empty DB) the scan still runs end
-      // to end without needing a separate watcher sync first. On subsequent
-      // runs it just refreshes lastSeenAt for rows the watcher already
-      // discovered.
-      const registry = await this.listSvc.resolveRegistry(tokens)
+      // Walk the enabled distribution_lists rows (owned by the admin portal)
+      // using their already-resolved targets. Rows whose URL has never
+      // resolved are skipped — the watcher owns resolution, and re-resolving
+      // here would cost a Graph round-trip per list per login.
+      //
+      // Note: on a brand-new deployment this set is empty until an admin adds
+      // a list at /admin/links (or runs the one-shot registry import), so the
+      // scan is a no-op rather than a bootstrap. That's the trade-off of the
+      // DB being the source of truth.
+      const allRows = await this.distributionLists.listForSync()
+      const dlRows = allRows.filter(
+        (r): r is typeof r & { siteId: string; targetListId: string } =>
+          r.siteId !== null && r.targetListId !== null,
+      )
       console.log(
-        `[job-profile-sync ${profile.jobTitle}/${profile.department}] registry rows visible to this user: ${registry.rows.length}`,
+        `[job-profile-sync ${profile.jobTitle}/${profile.department}] distribution lists to scan: ` +
+          `${dlRows.length}/${allRows.length} resolved`,
       )
 
-      const dlRows: { id: string; displayName: string; siteId: string; targetListId: string }[] = []
-      for (const row of registry.rows) {
-        const target = await this.listSvc.resolveTargetList(tokens, row.listUrl)
-        const upserted = await this.distributionLists.upsertRegistryRow({
-          registryListId: registry.registryListId,
-          row,
-          target,
-          syncStartedAt: scanStartedAt,
-        })
-        if (target) {
-          dlRows.push({
-            id: upserted.id,
-            displayName: row.displayName,
-            siteId: target.siteId,
-            targetListId: target.listId,
-          })
-        }
-      }
-
-      const liveTargetIds = new Set<string>()
       for (const dl of dlRows) {
         const listId = dl.targetListId
-        liveTargetIds.add(listId)
         let canReadThisList = false
         const liveCodes = new Set<string>()
         const seenAt = new Date()
@@ -338,7 +325,7 @@ export class JobProfileSyncService {
           } catch { /* swallow */ }
 
           try {
-            await this.distributionLists.markRegistryRowSyncResult({
+            await this.distributionLists.markSyncResult({
               distributionListId: dl.id,
               status,
               counters: {
@@ -369,11 +356,14 @@ export class JobProfileSyncService {
         syncStartedAt: scanStartedAt,
       })
 
-      // Run-end orphan reconcile — parity with ListWatcherService.sync.
-      // Registry rows that disappeared since last run drop to 'removed', and
-      // any synced resource whose listId isn't in this run's target set drops
-      // to pending_access.
-      await this.distributionLists.demoteOrphanRegistryRows(scanStartedAt)
+      // Run-end orphan reconcile — parity with ListWatcherService.sync. Any
+      // synced resource that no longer belongs to an enabled distribution
+      // list drops to pending_access.
+      //
+      // The live set comes from stored state, never from the lists THIS user
+      // could read: a scan run by someone without access to a given site would
+      // otherwise demote every resource in it.
+      const liveTargetIds = await this.distributionLists.liveTargetListIds()
       await this.documents.demoteOrphanedSharepointRows(liveTargetIds)
     } catch (err) {
       fatalError = (err as Error).message?.slice(0, 500) ?? 'unknown error'

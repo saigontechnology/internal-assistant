@@ -138,6 +138,17 @@ model UserPermission {
   displayDepartment  String    @default("")              @map("display_department")
   lastSync           DateTime? @map("last_sync") @db.Timestamp(6)
   lastError          String?   @map("last_error")
+  // 'admin' | 'user'. Kept as a plain string rather than a PG enum so the
+  // migration stays additive. Bootstrapped from ADMIN_EMAILS; thereafter
+  // managed from the admin portal (promote-only from env — never demote).
+  role               String    @default("user")
+  // Deactivated users are rejected at login and on every subsequent request
+  // (SessionGuard). Their session row is deleted on the first blocked request.
+  isActive           Boolean   @default(true) @map("is_active")
+  // Set when an admin manually pins (jobTitle, department). While true, the
+  // Azure AD write path (UserPermissionService.upsertProfile) leaves the
+  // normalized join keys alone so the override survives the weekly resync.
+  profileOverride    Boolean   @default(false) @map("profile_override")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
@@ -175,21 +186,28 @@ model JobProfileAccess {
   @@map("job_profile_access")
 }
 
-// One row per registry row in the "Document Distribution List" registry list.
-// `registryListId + registryItemId` is the stable identity (the Link URL can
-// be edited by the registry owner; the SharePoint row id can't). `targetListId`
-// is the dereferenced target — null when the URL hasn't been resolved yet.
+// One document-source list. Rows are owned by the admin portal: the DB is the
+// source of truth for `displayName` / `note` / `listUrl`, and the watcher
+// iterates these rows directly. `targetListId` is the dereferenced target of
+// `listUrl` — null when the URL hasn't been (or can't be) resolved yet.
 //
-// See docs/multi-list-watcher-plan.md §5.1.
+// `registryListId + registryItemId` are provenance only: they identify the row
+// in the legacy "Document Distribution List" SharePoint registry that this row
+// was imported from. Null for admin-created rows. The unique index still holds
+// because Postgres treats NULLs as distinct.
 model DistributionList {
   id              String   @id
-  registryListId  String   @map("registry_list_id")
-  registryItemId  String   @map("registry_item_id")
+  registryListId  String?  @map("registry_list_id")
+  registryItemId  String?  @map("registry_item_id")
   displayName     String   @map("display_name")
   note            String?
   listUrl         String   @map("list_url")
   siteId          String?  @map("site_id")
   targetListId    String?  @map("target_list_id")
+  // Disabled lists are skipped by the watcher and the job-profile scan. Their
+  // resources stay in `resources` but get demoted to pending_access.
+  enabled         Boolean  @default(true)
+  createdByEmail  String?  @map("created_by_email")
   lastSeenAt      DateTime @default(now()) @map("last_seen_at") @db.Timestamp(6)
   lastSyncedAt    DateTime? @map("last_synced_at") @db.Timestamp(6)
   lastSyncStatus  String   @default("pending") @map("last_sync_status")
@@ -249,4 +267,16 @@ model JobProfileDistributionList {
   @@id([jobTitle, department, distributionListId])
   @@index([distributionListId], map: "jpdl_distribution_idx")
   @@map("job_profile_distribution_lists")
+}
+
+// Admin-editable runtime settings, keyed by a dotted string (e.g.
+// "opencode.chat_model"). Only overrides live here: a missing key means the
+// corresponding env default wins. See chat/chat-settings.service.ts.
+model AppSetting {
+  key            String   @id
+  value          String
+  updatedByEmail String?  @map("updated_by_email")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("app_settings")
 }

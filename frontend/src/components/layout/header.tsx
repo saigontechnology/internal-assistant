@@ -1,4 +1,5 @@
-import { LogOut, Menu } from "lucide-react"
+import { LogOut, Menu, Shield } from "lucide-react"
+import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { useAuth } from "@/lib/auth"
@@ -20,6 +21,14 @@ export function Header() {
         <Menu />
       </Button>
       <div className="ml-auto flex items-center gap-3">
+        {user?.isAdmin && (
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/admin">
+              <Shield />
+              <span className="hidden sm:inline">Admin</span>
+            </Link>
+          </Button>
+        )}
         <ThemeToggle />
         {isAuthenticated && user && (
           <div className="flex items-center gap-2 border-l border-border pl-3">

@@ -1,3 +1,4 @@
+import type { DistributionList } from '@prisma/client'
 import { AppConfig } from '../config/app-config.service.js'
 import { DocumentsService, type SharepointUpsertOutcome } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -5,7 +6,6 @@ import { DistributionListService } from './distribution-list.service.js'
 import { GraphTokenProvider } from './graph-token-provider.js'
 import {
   SharepointListService,
-  type RegistryRow,
   type ResolvedTargetList,
 } from './sharepoint-list.service.js'
 
@@ -36,10 +36,9 @@ export interface SyncRunSummary {
   durationMs: number
   status: 'ok' | 'partial' | 'error'
   totals: {
-    registryRows: number
+    distributionLists: number
     distributionListsResolved: number
     distributionListsUnresolved: number
-    distributionListsOrphaned: number
     seen: number
     ingested: number
     updated: number
@@ -55,15 +54,15 @@ export interface SyncRunSummary {
 const MAX_ERRORS_PER_LIST = 50
 
 /**
- * Orchestrates a registry-driven sync. See docs/multi-list-watcher-plan.md §6.
+ * Orchestrates a sync over the DB-owned distribution lists.
  *
- *   1. Read the registry list under SHAREPOINT_SITE_PATH.
- *   2. Upsert distribution_lists rows (one per registry row).
- *   3. Dedupe targets — multiple registry rows pointing at the same list
- *      sync once; their counters mirror the single underlying sync.
+ *   1. Read every enabled `distribution_lists` row (managed from /admin/links).
+ *   2. Dereference any row whose target hasn't been resolved yet.
+ *   3. Dedupe targets — multiple rows pointing at the same list sync once;
+ *      their counters mirror the single underlying sync.
  *   4. Per resolved target: iterate items, apply Strategy H, write resources
  *      and distribution_list_items.
- *   5. Demote registry orphans + orphaned target resources.
+ *   5. Demote resources belonging to lists that were deleted or disabled.
  *
  * One global mutex; lists processed sequentially to stay under Graph quotas.
  */
@@ -91,45 +90,38 @@ export class ListWatcherService {
 
     const startedAt = this.currentStart
     const perList: PerListSummary[] = []
-    let registryRowsCount = 0
+    let listCount = 0
     let resolvedCount = 0
     let unresolvedCount = 0
-    let orphanCount = 0
     let fatalError: string | undefined
 
     try {
-      const registry = await this.listSvc.resolveRegistry(tokens)
-      registryRowsCount = registry.rows.length
+      const rows = await this.distributionLists.listForSync()
+      listCount = rows.length
 
-      // Group registry rows by their resolved targetListId. Multiple rows may
-      // point at the same list (intentionally — e.g. distribution to two
-      // departments) and we want to sync that target once but reflect the
-      // outcome onto every registry row that names it.
+      // Group rows by their resolved targetListId. Multiple rows may point at
+      // the same list (intentionally — e.g. distribution to two departments)
+      // and we want to sync that target once but reflect the outcome onto
+      // every row that names it.
       const groups = new Map<string, {
         target: ResolvedTargetList
         distributionListIds: string[]
-        registryRows: RegistryRow[]
+        rows: DistributionList[]
       }>()
 
-      for (const row of registry.rows) {
-        const target = await this.listSvc.resolveTargetList(tokens, row.listUrl)
-        const upserted = await this.distributionLists.upsertRegistryRow({
-          registryListId: registry.registryListId,
-          row,
-          target,
-          syncStartedAt: startedAt,
-        })
+      for (const row of rows) {
+        const target = await this.resolveTarget(tokens, row)
 
         if (!target) {
           unresolvedCount++
           perList.push({
-            distributionListId: upserted.id,
+            distributionListId: row.id,
             displayName: row.displayName,
             targetListId: null,
             status: 'unresolvable',
             counters: { seen: 0, ingested: 0, updated: 0, skipped: 0, pending: 0, removed: 0, failed: 0 },
             itemErrors: [],
-            fatalError: 'Link could not be resolved to a SharePoint list',
+            fatalError: 'List URL could not be resolved to a SharePoint list',
           })
           continue
         }
@@ -137,13 +129,13 @@ export class ListWatcherService {
         const key = target.listId
         const group = groups.get(key)
         if (group) {
-          group.distributionListIds.push(upserted.id)
-          group.registryRows.push(row)
+          group.distributionListIds.push(row.id)
+          group.rows.push(row)
         } else {
           groups.set(key, {
             target,
-            distributionListIds: [upserted.id],
-            registryRows: [row],
+            distributionListIds: [row.id],
+            rows: [row],
           })
         }
       }
@@ -155,16 +147,14 @@ export class ListWatcherService {
         perList.push(...summary)
       }
 
-      // Reconcile registry-side orphans (rows removed from the registry since
-      // last run). Their target resources will already be demoted by the
-      // documents-service sweep below; this just marks the dist_lists row.
-      orphanCount = await this.distributionLists.demoteOrphanRegistryRows(startedAt)
-
-      // Cross-list orphan demote: any synced resource whose listId isn't in
-      // this run's target set gets dropped to pending_access (target lists
-      // that disappeared from the registry, or whose registry row no longer
-      // resolves them).
-      const liveTargetIds = new Set<string>(Array.from(groups.values()).map((g) => g.target.listId))
+      // Cross-list orphan demote: any synced resource whose listId doesn't
+      // belong to an enabled distribution list drops to pending_access — the
+      // list was deleted or disabled from the admin portal.
+      //
+      // Derived from stored state, NOT from `groups`: a target that failed to
+      // resolve this run (transient Graph error) is still live, and demoting
+      // its resources would silently drop them out of chat retrieval.
+      const liveTargetIds = await this.distributionLists.liveTargetListIds()
       await this.documents.demoteOrphanedSharepointRows(liveTargetIds)
     } catch (err) {
       fatalError = (err as Error).message
@@ -176,10 +166,9 @@ export class ListWatcherService {
     const finishedAt = new Date()
 
     const totals: SyncRunSummary['totals'] = {
-      registryRows: registryRowsCount,
+      distributionLists: listCount,
       distributionListsResolved: resolvedCount,
       distributionListsUnresolved: unresolvedCount,
-      distributionListsOrphaned: orphanCount,
       seen: 0, ingested: 0, updated: 0, skipped: 0, pending: 0, removed: 0, failed: 0,
     }
     for (const s of perList) {
@@ -197,11 +186,7 @@ export class ListWatcherService {
       status = 'error'
     } else if (perList.length > 0 && perList.every((s) => s.status === 'error')) {
       status = 'error'
-    } else if (
-      perList.some((s) => s.status !== 'ok') ||
-      unresolvedCount > 0 ||
-      orphanCount > 0
-    ) {
+    } else if (perList.some((s) => s.status !== 'ok') || unresolvedCount > 0) {
       status = 'partial'
     } else {
       status = 'ok'
@@ -217,15 +202,80 @@ export class ListWatcherService {
   }
 
   /**
-   * Sync one target list. Returns one PerListSummary per registry row that
-   * resolved to this target (they all share the underlying counters but each
-   * needs its own summary entry for the UI).
+   * Sync a single distribution list. Shares the global mutex with `sync()` so
+   * an admin can't kick off a per-list run mid-full-sync and have the two
+   * fight over the same target.
+   *
+   * Deliberately skips the orphan-demote sweep: that reconciles the *whole*
+   * index against the *whole* live list set, which a single-list run has no
+   * business doing.
+   */
+  async syncList(tokens: GraphTokenProvider, distributionListId: string): Promise<PerListSummary> {
+    const row = await this.prisma.distributionList.findUnique({
+      where: { id: distributionListId },
+    })
+    if (!row) throw new UnknownListError(distributionListId)
+
+    if (this.running) throw new AlreadyRunningError()
+    this.running = true
+    this.currentStart = new Date()
+    try {
+      const target = await this.resolveTarget(tokens, row)
+      if (!target) {
+        return {
+          distributionListId: row.id,
+          displayName: row.displayName,
+          targetListId: null,
+          status: 'unresolvable',
+          counters: { seen: 0, ingested: 0, updated: 0, skipped: 0, pending: 0, removed: 0, failed: 0 },
+          itemErrors: [],
+          fatalError: 'List URL could not be resolved to a SharePoint list',
+        }
+      }
+      const summaries = await this.syncOneTarget(tokens, {
+        target,
+        distributionListIds: [row.id],
+        rows: [row],
+      })
+      return summaries[0]
+    } finally {
+      this.running = false
+      this.currentStart = null
+    }
+  }
+
+  /**
+   * Dereference a row's `listUrl`, using the cached (siteId, targetListId)
+   * when we already have one. A cached target is trusted for the run: the URL
+   * only changes through the admin portal, which re-resolves on write.
+   */
+  private async resolveTarget(
+    tokens: GraphTokenProvider,
+    row: DistributionList,
+  ): Promise<ResolvedTargetList | null> {
+    if (row.siteId && row.targetListId) {
+      return {
+        siteId: row.siteId,
+        listId: row.targetListId,
+        hostname: '',
+        displayName: row.displayName,
+      }
+    }
+    const target = await this.listSvc.resolveTargetList(tokens, row.listUrl)
+    await this.distributionLists.persistResolvedTarget(row.id, target).catch(() => {})
+    return target
+  }
+
+  /**
+   * Sync one target list. Returns one PerListSummary per distribution list
+   * that resolved to this target (they all share the underlying counters but
+   * each needs its own summary entry for the UI).
    */
   private async syncOneTarget(
     tokens: GraphTokenProvider,
-    group: { target: ResolvedTargetList; distributionListIds: string[]; registryRows: RegistryRow[] },
+    group: { target: ResolvedTargetList; distributionListIds: string[]; rows: DistributionList[] },
   ): Promise<PerListSummary[]> {
-    const { target, distributionListIds, registryRows } = group
+    const { target, distributionListIds, rows: groupRows } = group
     const listId = target.listId
     const seenAt = new Date()
     const counters: PerListCounters = {
@@ -427,7 +477,7 @@ export class ListWatcherService {
     // Mirror outcome onto every distribution_lists row pointing at this target.
     for (const dlId of distributionListIds) {
       try {
-        await this.distributionLists.markRegistryRowSyncResult({
+        await this.distributionLists.markSyncResult({
           distributionListId: dlId,
           status,
           counters: {
@@ -443,7 +493,7 @@ export class ListWatcherService {
 
     return distributionListIds.map((id, idx) => ({
       distributionListId: id,
-      displayName: registryRows[idx]?.displayName ?? target.displayName,
+      displayName: groupRows[idx]?.displayName ?? target.displayName,
       targetListId: target.listId,
       status,
       counters,
@@ -514,6 +564,10 @@ export class ListWatcherService {
 
 export class AlreadyRunningError extends Error {
   constructor() { super('A sync is already running') }
+}
+
+export class UnknownListError extends Error {
+  constructor(id: string) { super(`No distribution list with id ${id}`) }
 }
 
 function trim(v: unknown): string {

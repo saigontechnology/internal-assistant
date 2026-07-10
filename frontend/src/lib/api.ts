@@ -30,10 +30,10 @@ export interface SyncCounters {
 }
 
 export interface SyncRunTotals extends SyncCounters {
-  registryRows: number
+  /** Enabled distribution_lists rows walked by this run. */
+  distributionLists: number
   distributionListsResolved: number
   distributionListsUnresolved: number
-  distributionListsOrphaned: number
 }
 
 export interface PerListSummary {
@@ -173,54 +173,45 @@ export interface SharePointFileRef {
 
 // The session cookie is sent automatically (same-origin via the Vite proxy),
 // so no Authorization header is needed.
-async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const res = await fetch(url, options)
 
   if (!res.ok) {
     if (res.status === 401) throw new Error("Not signed in")
+    if (res.status === 403) throw new Error("You don't have permission to do that")
     const error = await res.json().catch(() => ({ error: "Request failed" }))
-    throw new Error(error.error || error.detail || "Request failed")
+    // Nest's exception filter puts the reason in `message`.
+    throw new Error(error.error || error.message || error.detail || "Request failed")
   }
 
   return res
 }
 
+// Authenticated since the /api/documents routes stopped being @Public() —
+// goes through apiFetch so a 401 surfaces as "Not signed in" rather than a
+// generic failure.
 export async function fetchDocuments(): Promise<DocumentInfo[]> {
-  const res = await fetch("/api/documents")
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch documents")
-  }
-
+  const res = await apiFetch("/api/documents")
   const data = await res.json()
   return data.documents
 }
 
+/** Admin-only server-side. */
 export async function deleteDocument(docId: string): Promise<void> {
-  const res = await fetch(`/api/documents/${docId}`, {
-    method: "DELETE",
-  })
-
-  if (!res.ok) {
-    throw new Error("Failed to delete document")
-  }
+  await apiFetch(`/api/documents/${docId}`, { method: "DELETE" })
 }
 
+/** Admin-only server-side. */
 export async function uploadFile(
   file: File
 ): Promise<{ id: string; filename: string; chunkCount: number; message: string }> {
   const formData = new FormData()
   formData.append("file", file)
 
-  const res = await fetch("/api/documents/upload", {
+  const res = await apiFetch("/api/documents/upload", {
     method: "POST",
     body: formData,
   })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: "Upload failed" }))
-    throw new Error(error.error || "Upload failed")
-  }
 
   return res.json()
 }

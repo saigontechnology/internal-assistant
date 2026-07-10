@@ -1,25 +1,164 @@
+import type { DistributionList } from '@prisma/client'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma/prisma.service.js'
 import type { RegistryRow, ResolvedTargetList } from './sharepoint-list.service.js'
 
 /**
- * Reads and writes the registry-driven tables:
- *   distribution_lists      — one row per registry row
+ * Reads and writes the distribution-list tables:
+ *   distribution_lists      — one row per document-source list (admin-owned)
  *   distribution_list_items — per-doc intent
  *   job_profile_distribution_lists — profile ↔ list edges
  *
- * Kept separate from DocumentsService so the registry plumbing doesn't bleed
- * into the file-ingestion pipeline.
+ * The DB is the source of truth: rows are created and edited from the admin
+ * portal, and the watcher iterates them directly. The legacy SharePoint
+ * "registry list" survives only as a one-shot import (`upsertRegistryRow`,
+ * called by the admin import endpoint).
+ *
+ * Kept separate from DocumentsService so the list plumbing doesn't bleed into
+ * the file-ingestion pipeline.
  */
 export class DistributionListService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── Registry rows ────────────────────────────────────────────────
+  // ── Sync inputs ──────────────────────────────────────────────────
+
+  /** The lists the watcher and the job-profile scan should walk. */
+  async listForSync(): Promise<DistributionList[]> {
+    return this.prisma.distributionList.findMany({
+      where: { enabled: true },
+      orderBy: { displayName: 'asc' },
+    })
+  }
 
   /**
-   * Upsert one registry row. Always bumps `last_seen_at` to mark the row as
-   * present in the current run; the orphan sweep at end-of-run uses this to
-   * decide what disappeared from the registry.
+   * Every target list that should stay live, i.e. the resolved targets of all
+   * *enabled* rows.
+   *
+   * Callers feed this to `DocumentsService.demoteOrphanedSharepointRows`,
+   * which demotes any synced resource whose list isn't in the set. It must be
+   * derived from stored state, never from "what this run managed to resolve" —
+   * a transient Graph failure, or a job-profile scan run by a user who can't
+   * read a given site, would otherwise mass-demote healthy resources.
+   */
+  async liveTargetListIds(): Promise<Set<string>> {
+    const rows = await this.prisma.distributionList.findMany({
+      where: { enabled: true, targetListId: { not: null } },
+      select: { targetListId: true },
+    })
+    return new Set(rows.map((r) => r.targetListId!))
+  }
+
+  /** Cache a freshly dereferenced target (or record that it didn't resolve). */
+  async persistResolvedTarget(id: string, target: ResolvedTargetList | null): Promise<void> {
+    await this.prisma.distributionList.update({
+      where: { id },
+      data: {
+        siteId: target?.siteId ?? null,
+        targetListId: target?.listId ?? null,
+        ...(target
+          ? {}
+          : {
+              lastSyncStatus: 'unresolvable',
+              lastSyncError: 'could not resolve the list URL to a SharePoint list',
+            }),
+      },
+    })
+  }
+
+  // ── Admin CRUD ───────────────────────────────────────────────────
+
+  async create(args: {
+    displayName: string
+    note: string | null
+    listUrl: string
+    target: ResolvedTargetList | null
+    createdByEmail: string | null
+  }): Promise<DistributionList> {
+    return this.prisma.distributionList.create({
+      data: {
+        id: nanoid(12),
+        displayName: args.displayName,
+        note: args.note,
+        listUrl: args.listUrl,
+        createdByEmail: args.createdByEmail,
+        siteId: args.target?.siteId ?? null,
+        targetListId: args.target?.listId ?? null,
+        lastSyncStatus: args.target ? 'pending' : 'unresolvable',
+        lastSyncError: args.target
+          ? null
+          : 'could not resolve the list URL to a SharePoint list',
+      },
+    })
+  }
+
+  /**
+   * Patch an admin-editable field. When `target` is provided the URL changed
+   * and was re-resolved; the sync counters reset because they describe a
+   * different underlying list.
+   */
+  async update(
+    id: string,
+    args: {
+      displayName?: string
+      note?: string | null
+      enabled?: boolean
+      listUrl?: string
+      target?: ResolvedTargetList | null
+    },
+  ): Promise<DistributionList> {
+    const urlChanged = args.listUrl !== undefined
+    return this.prisma.distributionList.update({
+      where: { id },
+      data: {
+        ...(args.displayName !== undefined ? { displayName: args.displayName } : {}),
+        ...(args.note !== undefined ? { note: args.note } : {}),
+        ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+        ...(urlChanged
+          ? {
+              listUrl: args.listUrl,
+              siteId: args.target?.siteId ?? null,
+              targetListId: args.target?.listId ?? null,
+              lastSyncStatus: args.target ? 'pending' : 'unresolvable',
+              lastSyncError: args.target
+                ? null
+                : 'could not resolve the list URL to a SharePoint list',
+              itemsSynced: 0,
+              itemsPending: 0,
+              itemsFailed: 0,
+              itemsRemoved: 0,
+            }
+          : {}),
+      },
+    })
+  }
+
+  /** Cascades distribution_list_items + job_profile_distribution_lists. */
+  async remove(id: string): Promise<void> {
+    await this.prisma.distributionList.delete({ where: { id } })
+  }
+
+  /**
+   * Duplicate check for create/update. Two rows may deliberately point at the
+   * same target (e.g. one list distributed to two departments), so this only
+   * blocks an identical URL — not an identical target.
+   */
+  async findByListUrl(listUrl: string, excludeId?: string): Promise<DistributionList | null> {
+    return this.prisma.distributionList.findFirst({
+      where: {
+        listUrl,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    })
+  }
+
+  // ── Legacy registry import (one-shot) ───────────────────────────
+
+  /**
+   * Upsert one row of the legacy SharePoint registry list. Only reachable via
+   * `POST /api/admin/distribution-lists/import-registry`, which lifts an
+   * existing registry into the DB once so a deployment can stop maintaining
+   * the SharePoint list. Rows already imported are matched on
+   * (registryListId, registryItemId) and refreshed rather than duplicated.
    *
    * `target` is null when the URL hasn't been (or can't be) resolved.
    */
@@ -28,7 +167,7 @@ export class DistributionListService {
     row: RegistryRow
     target: ResolvedTargetList | null
     syncStartedAt: Date
-  }): Promise<{ id: string }> {
+  }): Promise<{ id: string; created: boolean }> {
     const { registryListId, row, target, syncStartedAt } = args
     const existing = await this.prisma.distributionList.findUnique({
       where: {
@@ -54,7 +193,7 @@ export class DistributionListService {
           lastSyncError: target ? null : 'could not resolve Link to a SharePoint list',
         },
       })
-      return existing
+      return { id: existing.id, created: false }
     }
     const created = await this.prisma.distributionList.create({
       data: {
@@ -72,15 +211,15 @@ export class DistributionListService {
       },
       select: { id: true },
     })
-    return created
+    return { id: created.id, created: true }
   }
 
   /**
-   * After a registry-row upsert *and* the per-list sync finishes, write the
-   * outcome onto the distribution_lists row so the UI has counters without
-   * having to join against resources.
+   * After a per-list sync finishes, write the outcome onto the
+   * distribution_lists row so the UI has counters without having to join
+   * against resources.
    */
-  async markRegistryRowSyncResult(args: {
+  async markSyncResult(args: {
     distributionListId: string
     status: 'ok' | 'partial' | 'error'
     counters: {
@@ -105,34 +244,17 @@ export class DistributionListService {
     })
   }
 
-  /**
-   * Demote distribution_lists rows that weren't seen this run. Their target
-   * resources also drop to pending_access via DocumentsService — this just
-   * marks the registry entry as gone for UI purposes.
-   *
-   * Returns the demoted count.
-   */
-  async demoteOrphanRegistryRows(syncStartedAt: Date): Promise<number> {
-    const result = await this.prisma.distributionList.updateMany({
-      where: {
-        lastSeenAt: { lt: syncStartedAt },
-        lastSyncStatus: { not: 'removed' },
-      },
-      data: {
-        lastSyncStatus: 'removed',
-        lastSyncError: 'registry row no longer present',
-      },
-    })
-    return result.count
-  }
-
-  /** Listed by the API; used by the Sidebar's Layer 1. */
+  /** Listed by the API; used by the Sidebar's Layer 1 and the admin portal. */
   async listAllForApi(): Promise<
     {
       id: string
       displayName: string
       note: string | null
       listUrl: string
+      enabled: boolean
+      siteId: string | null
+      targetListId: string | null
+      createdByEmail: string | null
       lastSyncedAt: Date | null
       lastSyncStatus: string
       lastSyncError: string | null
@@ -147,6 +269,10 @@ export class DistributionListService {
       displayName: r.displayName,
       note: r.note,
       listUrl: r.listUrl,
+      enabled: r.enabled,
+      siteId: r.siteId,
+      targetListId: r.targetListId,
+      createdByEmail: r.createdByEmail,
       lastSyncedAt: r.lastSyncedAt,
       lastSyncStatus: r.lastSyncStatus,
       lastSyncError: r.lastSyncError,

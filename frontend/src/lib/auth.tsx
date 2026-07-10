@@ -12,6 +12,9 @@ export interface AuthUser {
   name: string | null
   /** True when the user's email is in the server-side sync_allowlist table. */
   isAllowedToSync: boolean
+  role: "admin" | "user"
+  /** Gates the /admin/* portal. Server-enforced too — this only hides the UI. */
+  isAdmin: boolean
 }
 
 interface AuthContextValue {
@@ -35,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json()
       setUser(
         data.authenticated
-          ? { isAllowedToSync: false, ...data.user }
+          ? { isAllowedToSync: false, role: "user", isAdmin: false, ...data.user }
           : null,
       )
     } catch {
