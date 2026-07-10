@@ -12,6 +12,7 @@ import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
 import { buildGoogleClient } from '../config/google-client.js'
 import { buildOpencodeClient } from '../config/opencode-client.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { ChatSettingsService } from './chat-settings.service.js'
 import {
   EmbeddingsService,
@@ -111,6 +112,7 @@ export class ChatService {
     private readonly config: AppConfig,
     private readonly embeddings: EmbeddingsService,
     private readonly settings: ChatSettingsService,
+    private readonly runtime: RuntimeSettingsService,
   ) {
     this.openai = buildOpenAIClient(this.config)
     this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
@@ -120,9 +122,9 @@ export class ChatService {
   /** The ordered Gemini ladder: primary → first fallback → second fallback. */
   private geminiLadder(): string[] {
     return [
-      this.config.geminiChatModel,
-      this.config.geminiChatFallbackModel,
-      this.config.geminiChatSecondFallbackModel,
+      this.runtime.geminiChatModel,
+      this.runtime.geminiChatFallbackModel,
+      this.runtime.geminiChatSecondFallbackModel,
     ]
   }
 
@@ -180,7 +182,7 @@ export class ChatService {
       const modelId = this.pickHealthyRung(ladder)
       return { model: this.opencode.chat(modelId), modelId, ladder }
     }
-    const modelId = this.config.chatModel
+    const modelId = this.runtime.chatModel
     return { model: this.openai.chat(modelId), modelId, ladder: [modelId] }
   }
 

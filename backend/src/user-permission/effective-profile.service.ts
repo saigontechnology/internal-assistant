@@ -1,5 +1,5 @@
 import type { Session } from '@prisma/client'
-import { AppConfig } from '../config/app-config.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { JobProfileService } from './job-profile.service.js'
 import { JobProfileSyncService } from './job-profile-sync.service.js'
 import {
@@ -32,7 +32,7 @@ export interface EffectiveProfile {
  */
 export class EffectiveProfileService {
   constructor(
-    private readonly config: AppConfig,
+    private readonly config: RuntimeSettingsService,
     private readonly perms: UserPermissionService,
     private readonly profiles: JobProfileService,
     private readonly sync: JobProfileSyncService,

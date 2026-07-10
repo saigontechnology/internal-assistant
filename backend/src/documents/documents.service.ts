@@ -8,6 +8,7 @@ import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { ParsersService } from './parsers.service.js'
 import { fileDateFromSourceMetadata } from './parse-file-date.js'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import { splitText } from './text-splitter.js'
 import type { DocumentInfo, ImportResponse, SharePointFileRef } from '../common/types.js'
@@ -71,6 +72,7 @@ export class DocumentsService {
     private readonly embeddings: EmbeddingsService,
     private readonly sharepoint: SharepointService,
     private readonly prisma: PrismaService,
+    private readonly settings: RuntimeSettingsService,
   ) {
     this.openai = buildOpenAIClient(config)
   }
@@ -84,8 +86,8 @@ export class DocumentsService {
     const chunks = splitText(
       parsed.content,
       parsed.metadata,
-      this.config.chunkSize,
-      this.config.chunkOverlap,
+      this.settings.chunkSize,
+      this.settings.chunkOverlap,
       buildChunkHeader({ filename, fileType }),
     )
     const docId = randomUUID().replace(/-/g, '').slice(0, 12)
@@ -110,8 +112,8 @@ export class DocumentsService {
     const chunks = splitText(
       parsed.content,
       { ...parsed.metadata, sharepoint_item_id: fileRef.itemId },
-      this.config.chunkSize,
-      this.config.chunkOverlap,
+      this.settings.chunkSize,
+      this.settings.chunkOverlap,
       buildChunkHeader({ filename, fileType }),
     )
     const docId = randomUUID().replace(/-/g, '').slice(0, 12)
@@ -307,8 +309,8 @@ export class DocumentsService {
         sharepoint_code: args.code,
         sharepoint_version: args.version,
       },
-      this.config.chunkSize,
-      this.config.chunkOverlap,
+      this.settings.chunkSize,
+      this.settings.chunkOverlap,
       buildChunkHeader({
         filename: args.file.filename,
         fileType,

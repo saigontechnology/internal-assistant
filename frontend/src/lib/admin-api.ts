@@ -258,3 +258,72 @@ export function applyPrefix(prefix: string, modelId: string): string {
   const p = prefix.trim().replace(/^\/+|\/+$/g, "")
   return p ? `${p}/${modelId}` : modelId
 }
+
+// ── Runtime settings ─────────────────────────────────────────────────
+
+export type SettingGroup = "chat" | "ingest" | "sharepoint" | "users"
+
+export interface SettingGroupInfo {
+  group: SettingGroup
+  title: string
+  blurb: string
+}
+
+export interface RuntimeSetting {
+  key: string
+  group: SettingGroup
+  label: string
+  help: string
+  kind: "string" | "number"
+  /** The env var this falls back to when no override is stored. */
+  envVar: string
+  min: number | null
+  max: number | null
+  value: string
+  source: "db" | "env"
+  envDefault: string
+  updatedByEmail: string | null
+  updatedAt: string | null
+}
+
+export interface EnvEntry {
+  name: string
+  secret: boolean
+  note: string | null
+  /** Masked for secrets, null when unset. Never the raw secret. */
+  value: string | null
+  isSet: boolean
+}
+
+export interface AdminSettings {
+  groups: SettingGroupInfo[]
+  settings: RuntimeSetting[]
+  environment: EnvEntry[]
+}
+
+export async function fetchAdminSettings(): Promise<AdminSettings> {
+  const res = await apiFetch("/api/admin/settings")
+  return res.json()
+}
+
+/** Sparse update — only the keys present are written. Returns the fresh state. */
+export async function updateAdminSettings(
+  values: Record<string, string>,
+): Promise<AdminSettings> {
+  const res = await apiFetch("/api/admin/settings", {
+    method: "PUT",
+    headers: json,
+    body: JSON.stringify({ values }),
+  })
+  return res.json()
+}
+
+/** Omit `keys` to reset every editable setting to its env default. */
+export async function resetAdminSettings(keys?: string[]): Promise<AdminSettings> {
+  const res = await apiFetch("/api/admin/settings/reset", {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({ keys: keys ?? [] }),
+  })
+  return res.json()
+}

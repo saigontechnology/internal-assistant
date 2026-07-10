@@ -1,4 +1,4 @@
-import { AppConfig } from '../config/app-config.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { GraphTokenProvider } from './graph-token-provider.js'
 
 /**
@@ -78,7 +78,7 @@ export class SharepointListService {
   /** Memoized listId per (siteId, displayName) so we don't paginate lists twice. */
   private readonly listByName = new Map<string, string>()
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(private readonly config: RuntimeSettingsService) {}
 
   /** Reset every cache. */
   resetCache(): void {

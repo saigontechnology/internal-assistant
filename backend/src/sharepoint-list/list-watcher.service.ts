@@ -1,5 +1,5 @@
 import type { DistributionList } from '@prisma/client'
-import { AppConfig } from '../config/app-config.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { DocumentsService, type SharepointUpsertOutcome } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { DistributionListService } from './distribution-list.service.js'
@@ -76,7 +76,7 @@ export class ListWatcherService {
     private readonly listSvc: SharepointListService,
     private readonly documents: DocumentsService,
     private readonly distributionLists: DistributionListService,
-    private readonly config: AppConfig,
+    private readonly config: RuntimeSettingsService,
   ) {}
 
   isRunning(): boolean { return this.running }

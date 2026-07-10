@@ -100,11 +100,14 @@ export class AppConfig {
 
   // ── Per-user sync ──
   get userSyncIntervalDays(): number { return this.raw.getOrThrow('USER_SYNC_INTERVAL_DAYS') }
+  /** Un-normalized env values, for display in the admin settings form. */
+  get rawDefaultJobTitle(): string { return this.raw.getOrThrow('DEFAULT_JOB_TITLE') }
+  get rawDefaultDepartment(): string { return this.raw.getOrThrow('DEFAULT_DEPARTMENT') }
   /** Normalized fallback profile tuple — used when a user's own profile isn't ready. */
   get defaultProfile(): { jobTitle: string; department: string } {
     return {
-      jobTitle: normalizeProfileField(this.raw.getOrThrow('DEFAULT_JOB_TITLE')),
-      department: normalizeProfileField(this.raw.getOrThrow('DEFAULT_DEPARTMENT')),
+      jobTitle: normalizeProfileField(this.rawDefaultJobTitle),
+      department: normalizeProfileField(this.rawDefaultDepartment),
     }
   }
 }

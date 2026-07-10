@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { AuthModule } from '../auth/auth.module.js'
-import { AppConfig } from '../config/app-config.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { DocumentsModule } from '../documents/documents.module.js'
 import { DocumentsService } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -16,8 +16,8 @@ import { SyncController } from './sync.controller.js'
   providers: [
     {
       provide: SharepointListService,
-      inject: [AppConfig],
-      useFactory: (c: AppConfig) => new SharepointListService(c),
+      inject: [RuntimeSettingsService],
+      useFactory: (c: RuntimeSettingsService) => new SharepointListService(c),
     },
     {
       provide: DistributionListService,
@@ -26,13 +26,13 @@ import { SyncController } from './sync.controller.js'
     },
     {
       provide: ListWatcherService,
-      inject: [PrismaService, SharepointListService, DocumentsService, DistributionListService, AppConfig],
+      inject: [PrismaService, SharepointListService, DocumentsService, DistributionListService, RuntimeSettingsService],
       useFactory: (
         p: PrismaService,
         s: SharepointListService,
         d: DocumentsService,
         dl: DistributionListService,
-        c: AppConfig,
+        c: RuntimeSettingsService,
       ) => new ListWatcherService(p, s, d, dl, c),
     },
   ],

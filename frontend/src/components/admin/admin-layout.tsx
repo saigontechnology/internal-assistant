@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ArrowLeft, Bot, FileText, Link2, Users } from "lucide-react"
+import { ArrowLeft, Bot, FileText, Link2, Settings, Users } from "lucide-react"
 import { NavLink, Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/admin/documents", label: "Documents", icon: FileText },
   { to: "/admin/links", label: "Links", icon: Link2 },
   { to: "/admin/chat-model", label: "Chat model", icon: Bot },
+  { to: "/admin/settings", label: "Settings", icon: Settings },
 ]
 
 export function AdminLayout({ children }: { children: ReactNode }) {

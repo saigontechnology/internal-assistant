@@ -1,6 +1,6 @@
 import type { Session } from '@prisma/client'
 import { SessionService } from '../auth/session.service.js'
-import { AppConfig } from '../config/app-config.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import {
   DocumentsService,
   type SharepointUpsertOutcome,
@@ -34,7 +34,7 @@ const ACCESS_FLUSH_BATCH_SIZE = 10
 
 export class JobProfileSyncService {
   constructor(
-    private readonly config: AppConfig,
+    private readonly config: RuntimeSettingsService,
     private readonly listSvc: SharepointListService,
     private readonly documents: DocumentsService,
     private readonly prisma: PrismaService,

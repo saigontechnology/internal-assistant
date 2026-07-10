@@ -5,6 +5,7 @@ import { AdminUsersPage } from "./users-page"
 import { AdminDocumentsPage } from "./documents-page"
 import { AdminLinksPage } from "./links-page"
 import { AdminChatModelPage } from "./chat-model-page"
+import { AdminSettingsPage } from "./settings-page"
 
 /**
  * Entry point for `/admin/*`.
@@ -25,6 +26,7 @@ export function AdminApp() {
         <Route path="documents" element={<AdminDocumentsPage />} />
         <Route path="links" element={<AdminLinksPage />} />
         <Route path="chat-model" element={<AdminChatModelPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
         <Route path="*" element={<Navigate to="/admin/users" replace />} />
       </Routes>
     </AdminLayout>

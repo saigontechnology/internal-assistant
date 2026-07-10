@@ -6,6 +6,7 @@ import { AppConfig } from '../config/app-config.service.js'
 import { DocumentsModule } from '../documents/documents.module.js'
 import { DocumentsService } from '../documents/documents.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { SharepointListModule } from '../sharepoint-list/sharepoint-list.module.js'
 import { DistributionListService } from '../sharepoint-list/distribution-list.service.js'
 import { SharepointListService } from '../sharepoint-list/sharepoint-list.service.js'
@@ -38,7 +39,7 @@ import { UserPermissionService } from './user-permission.service.js'
     {
       provide: JobProfileSyncService,
       inject: [
-        AppConfig,
+        RuntimeSettingsService,
         SharepointListService,
         DocumentsService,
         PrismaService,
@@ -49,7 +50,7 @@ import { UserPermissionService } from './user-permission.service.js'
         DistributionListService,
       ],
       useFactory: (
-        c: AppConfig,
+        c: RuntimeSettingsService,
         l: SharepointListService,
         d: DocumentsService,
         p: PrismaService,
@@ -62,9 +63,9 @@ import { UserPermissionService } from './user-permission.service.js'
     },
     {
       provide: EffectiveProfileService,
-      inject: [AppConfig, UserPermissionService, JobProfileService, JobProfileSyncService],
+      inject: [RuntimeSettingsService, UserPermissionService, JobProfileService, JobProfileSyncService],
       useFactory: (
-        c: AppConfig,
+        c: RuntimeSettingsService,
         up: UserPermissionService,
         jp: JobProfileService,
         s: JobProfileSyncService,

@@ -45,7 +45,8 @@ Each subdirectory is a Nest module wired in `app.module.ts`:
 - **`sharepoint/`** — Graph API wrapper for browsing sites/drives/files.
 - **`sharepoint-list/`** — the **list watcher** feature. Each `DistributionList` row names a target SharePoint list by URL; the watcher dereferences it and syncs its rows into `Resource`. Rows are managed from the admin portal — see "SharePoint list watcher" below.
 - **`user-permission/`** — job-profile ingest (title + department) driving role-based access to documents. Weekly resync via `USER_SYNC_INTERVAL_DAYS`; while a user's own profile is mid-scan or unknown, the chat filter falls back to `DEFAULT_JOB_TITLE` / `DEFAULT_DEPARTMENT`.
-- **`admin/`** — the `/api/admin/*` surface behind `AdminGuard`: user management, document management, CRUD over the distribution lists, and the OpenCode chat-model picker. See "Admin portal" below.
+- **`admin/`** — the `/api/admin/*` surface behind `AdminGuard`: user management, document management, CRUD over the distribution lists, the OpenCode chat-model picker, and the runtime-settings page. See "Admin portal" below.
+- **`settings/`** — `RuntimeSettingsService`: admin-editable config backed by `app_settings`, served from an in-memory snapshot (refreshed on write and every 30s). It **shadows `AppConfig`** — every getter falls back to the env var when no override row exists, so an empty table behaves exactly like the env-only build. Consumers inject `RuntimeSettingsService`, not `AppConfig`, for anything in `setting-defs.ts`. The snapshot exists because callers (`documents.service.ts` while chunking, `chat.service.ts` while resolving a model) read these values **synchronously** deep in request handling; making them async would be a large refactor for values that change a few times a year.
 - **`prisma/`** — the `PrismaService`, plus the schema at `backend/prisma/schema.prisma`.
 
 ### Chat provider switch
@@ -93,6 +94,8 @@ Two other invariants worth knowing:
 - `UserPermission.isActive` — `SessionGuard` checks it on every authed request and deletes the session when false; `AuthService.completeLogin` rejects at the door. A missing `user_permissions` row means "active" (first-login users).
 
 `GET /api/documents` is now authenticated (was `@Public()`); `POST /api/documents/upload` and `DELETE /api/documents/:id` are admin-only.
+
+**Runtime settings** (`/admin/settings`, `SETTING_DEFS` in `settings/setting-defs.ts`). Adding a setting means adding one registry entry plus one getter on `RuntimeSettingsService` — the controller and the form are generic. Three classes of var deliberately stay env-only, and the registry's doc comment says why: `EMBEDDING_MODEL` (a different output dimension silently corrupts the `halfvec(2048)` column rather than erroring), anything read in a constructor (`CHAT_PROVIDER` and the API base URLs — ChatService builds its SDK clients once), and every secret. The read-only "Environment" panel resolves non-secrets through `AppConfig` rather than `process.env`, because Zod's defaults are never written back to `process.env`; secrets are masked server-side and `REDIS_URL`'s userinfo is stripped.
 
 ### Auth model
 

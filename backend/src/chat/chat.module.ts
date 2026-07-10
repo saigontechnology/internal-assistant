@@ -4,6 +4,7 @@ import { AppConfig } from '../config/app-config.service.js'
 import { EmbeddingsModule } from '../embeddings/embeddings.module.js'
 import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { UserPermissionModule } from '../user-permission/user-permission.module.js'
 import { ActiveStreamRegistry } from './active-stream-registry.js'
 import { ChatHistoryService } from './chat-history.service.js'
@@ -23,9 +24,13 @@ import { ResumableStreamService } from './resumable-stream.service.js'
     },
     {
       provide: ChatService,
-      inject: [AppConfig, EmbeddingsService, ChatSettingsService],
-      useFactory: (c: AppConfig, e: EmbeddingsService, s: ChatSettingsService) =>
-        new ChatService(c, e, s),
+      inject: [AppConfig, EmbeddingsService, ChatSettingsService, RuntimeSettingsService],
+      useFactory: (
+        c: AppConfig,
+        e: EmbeddingsService,
+        s: ChatSettingsService,
+        rs: RuntimeSettingsService,
+      ) => new ChatService(c, e, s, rs),
     },
     {
       provide: ChatHistoryService,

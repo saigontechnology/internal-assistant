@@ -10,6 +10,7 @@ import { AdminBootstrapService } from './admin-bootstrap.service.js'
 import { AdminChatModelController } from './admin-chat-model.controller.js'
 import { AdminDocumentsController } from './admin-documents.controller.js'
 import { AdminListsController } from './admin-lists.controller.js'
+import { AdminSettingsController } from './admin-settings.controller.js'
 import { AdminUsersController } from './admin-users.controller.js'
 import { AdminUsersService } from './admin-users.service.js'
 
@@ -27,6 +28,7 @@ import { AdminUsersService } from './admin-users.service.js'
     AdminDocumentsController,
     AdminListsController,
     AdminChatModelController,
+    AdminSettingsController,
   ],
   providers: [
     {
