@@ -15,8 +15,10 @@ import type { Request } from 'express'
 import type { Session } from '@prisma/client'
 import { AdminGuard } from '../auth/admin.guard.js'
 import {
+  applyPrefix,
   ChatSettingsService,
   LADDER_RUNGS,
+  normalizePrefix,
   type OpencodeLadder,
 } from '../chat/chat-settings.service.js'
 import { AppConfig } from '../config/app-config.service.js'
@@ -26,18 +28,26 @@ import {
   type OpencodeModel,
 } from '../config/opencode-catalog.js'
 
-interface PutLadderBody {
+interface PutConfigBody {
   primary?: string
   fallback?: string
   secondFallback?: string
+  /** e.g. "opencode-go". Empty string is valid and means "send bare ids". */
+  prefix?: string
 }
+
+/**
+ * A prefix is a path segment, not a full id. Reject anything that would produce
+ * a malformed model id once joined — the gateway's error for that is opaque.
+ */
+const PREFIX_RE = /^[A-Za-z0-9._-]+$/
 
 /**
  * `/api/admin/chat-model` — the OpenCode model picker.
  *
- * Only the OpenCode ladder is editable here. CHAT_PROVIDER itself stays in the
- * env: flipping providers swaps the SDK client that ChatService builds at
- * construction time, so it can't be changed without a restart anyway.
+ * Only the OpenCode ladder and its prefix are editable here. CHAT_PROVIDER
+ * itself stays in the env: flipping providers swaps the SDK client that
+ * ChatService builds at construction time, so it can't change without a restart.
  */
 @Controller('admin/chat-model')
 @UseGuards(AdminGuard)
@@ -48,7 +58,7 @@ export class AdminChatModelController {
   ) {}
 
   /**
-   * Current ladder + the gateway's catalog.
+   * Current ladder + prefix + the gateway's catalog.
    *
    * A catalog fetch failure is reported in-band (`catalogError`) rather than
    * as a 5xx: the admin should still be able to see what's configured, and
@@ -56,7 +66,7 @@ export class AdminChatModelController {
    */
   @Get('/')
   async get(@Query('refresh') refresh?: string) {
-    const ladder = await this.settings.opencodeLadderDetail()
+    const { ladder, prefix } = await this.settings.opencodeDetail()
 
     let models: OpencodeModel[] = []
     let catalogError: string | null = null
@@ -74,28 +84,41 @@ export class AdminChatModelController {
       active: this.config.chatProvider === 'opencode',
       models,
       catalogError,
+      prefix,
       ladder: ladder.map((rung) => ({
         ...rung,
-        // The env defaults use a `<provider>/<model>` form the gateway doesn't
-        // return. Flag anything absent from the catalog so a mis-set rung is
-        // visible instead of only failing at stream time.
+        // Membership is checked on the BARE id: the catalog never lists the
+        // prefixed form. Flags a rung the gateway no longer offers.
         inCatalog: catalogError ? null : known.has(rung.value),
+        /** What actually goes on the wire, for the UI to echo back. */
+        resolved: applyPrefix(prefix.value, rung.value),
       })),
     }
   }
 
   /**
-   * Pin all three rungs. Every value is validated against the live catalog, so
-   * a typo can't take chat down; if the catalog is unreachable we refuse rather
-   * than persist something we can't check.
+   * Pin the ladder and prefix. Model ids are validated against the live
+   * catalog, so a typo can't take chat down; if the catalog is unreachable we
+   * refuse rather than persist something we can't check.
+   *
+   * The prefix is NOT checked against the catalog — it's a routing namespace
+   * the catalog knows nothing about — only that it's a well-formed segment.
    */
   @Put('/')
-  async put(@Req() req: Request, @Body() body: PutLadderBody) {
+  async put(@Req() req: Request, @Body() body: PutConfigBody) {
     const ladder = {} as OpencodeLadder
     for (const rung of LADDER_RUNGS) {
       const value = body[rung]?.trim()
       if (!value) throw new BadRequestException(`${rung} is required`)
       ladder[rung] = value
+    }
+
+    const prefix = normalizePrefix(body.prefix)
+    if (prefix && !PREFIX_RE.test(prefix)) {
+      throw new BadRequestException(
+        `prefix "${prefix}" is not a valid path segment. Use something like "opencode-go", ` +
+          `or leave it empty to send bare model ids.`,
+      )
     }
 
     let models: OpencodeModel[]
@@ -109,23 +132,25 @@ export class AdminChatModelController {
     }
 
     const known = new Set(models.map((m) => m.id))
-    const unknown = LADDER_RUNGS.filter((r) => !known.has(ladder[r])).map((r) => `${r}="${ladder[r]}"`)
+    const unknown = LADDER_RUNGS.filter((r) => !known.has(ladder[r])).map(
+      (r) => `${r}="${ladder[r]}"`,
+    )
     if (unknown.length) {
       throw new BadRequestException(
         `Not offered by the OpenCode gateway: ${unknown.join(', ')}. ` +
-          `Pick from the catalog — ids look like "glm-5.2", not "zai/glm-5.2".`,
+          `Pick bare ids from the catalog (e.g. "glm-5.2") — the prefix is set separately.`,
       )
     }
 
     const session = (req as Request & { session: Session }).session
-    await this.settings.setOpencodeLadder(ladder, session.username ?? null)
-    return { ladder: await this.settings.opencodeLadderDetail() }
+    await this.settings.setOpencodeConfig({ ladder, prefix }, session.username ?? null)
+    return this.settings.opencodeDetail()
   }
 
-  /** Drop the overrides; the ladder falls back to OPENCODE_CHAT_*_MODEL. */
+  /** Drop the overrides; ladder and prefix fall back to the env vars. */
   @Post('reset')
   async reset() {
-    await this.settings.resetOpencodeLadder()
-    return { ladder: await this.settings.opencodeLadderDetail() }
+    await this.settings.resetOpencodeConfig()
+    return this.settings.opencodeDetail()
   }
 }

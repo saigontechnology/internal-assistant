@@ -3,6 +3,7 @@ import { AlertCircle, RefreshCw, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -24,18 +25,23 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
+  applyPrefix,
   fetchChatModelSettings,
-  resetChatModelLadder,
-  updateChatModelLadder,
+  resetChatModelConfig,
+  updateChatModelConfig,
   LADDER_RUNGS,
+  type ChatModelInput,
   type ChatModelSettings,
-  type LadderRung,
 } from "@/lib/admin-api"
 
-type Draft = Record<LadderRung, string>
-
-function draftFrom(settings: ChatModelSettings): Draft {
-  return Object.fromEntries(settings.ladder.map((r) => [r.rung, r.value])) as Draft
+function draftFrom(settings: ChatModelSettings): ChatModelInput {
+  const byRung = Object.fromEntries(settings.ladder.map((r) => [r.rung, r.value]))
+  return {
+    primary: byRung.primary ?? "",
+    fallback: byRung.fallback ?? "",
+    secondFallback: byRung.secondFallback ?? "",
+    prefix: settings.prefix.value,
+  }
 }
 
 function formatDate(value: string | null): string {
@@ -45,7 +51,7 @@ function formatDate(value: string | null): string {
 
 export function AdminChatModelPage() {
   const [settings, setSettings] = useState<ChatModelSettings | null>(null)
-  const [draft, setDraft] = useState<Draft | null>(null)
+  const [draft, setDraft] = useState<ChatModelInput | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -70,8 +76,8 @@ export function AdminChatModelPage() {
     if (!draft) return
     setSaving(true)
     try {
-      await updateChatModelLadder(draft)
-      toast.success("Chat model ladder updated. New chats use it within 30 seconds.")
+      await updateChatModelConfig(draft)
+      toast.success("Chat model updated. New chats use it within 30 seconds.")
       await load()
     } catch (err) {
       toast.error((err as Error).message)
@@ -83,7 +89,7 @@ export function AdminChatModelPage() {
   async function reset() {
     setSaving(true)
     try {
-      await resetChatModelLadder()
+      await resetChatModelConfig()
       toast.success("Reverted to the models configured in the environment.")
       await load()
     } catch (err) {
@@ -96,9 +102,12 @@ export function AdminChatModelPage() {
   const dirty =
     !!settings &&
     !!draft &&
-    settings.ladder.some((r) => draft[r.rung] !== r.value)
+    (settings.prefix.value !== draft.prefix.trim() ||
+      settings.ladder.some((r) => draft[r.rung] !== r.value))
 
-  const pinned = settings?.ladder.some((r) => r.source === "db") ?? false
+  const pinned =
+    !!settings &&
+    (settings.prefix.source === "db" || settings.ladder.some((r) => r.source === "db"))
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -126,7 +135,7 @@ export function AdminChatModelPage() {
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <p className="text-foreground">
             <code>CHAT_PROVIDER</code> is <strong>{settings.provider}</strong>, not{" "}
-            <code>opencode</code>. You can set the ladder here, but chat will keep using
+            <code>opencode</code>. You can set the model here, but chat will keep using
             the {settings.provider} models until the environment variable changes.
           </p>
         </div>
@@ -141,12 +150,39 @@ export function AdminChatModelPage() {
 
       {loading && !settings ? (
         <div className="space-y-4">
+          <Skeleton className="h-20 w-full" />
           {LADDER_RUNGS.map((r) => (
             <Skeleton key={r.rung} className="h-20 w-full" />
           ))}
         </div>
       ) : settings && draft ? (
         <>
+          <div className="space-y-1.5 rounded-md border border-border p-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="prefix">Model prefix</Label>
+              <Badge variant={settings.prefix.source === "db" ? "default" : "secondary"}>
+                {settings.prefix.source === "db" ? "Set by admin" : "Default"}
+              </Badge>
+            </div>
+            <Input
+              id="prefix"
+              value={draft.prefix}
+              placeholder="opencode-go"
+              disabled={saving}
+              onChange={(e) => setDraft({ ...draft, prefix: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Prepended to every model below when calling the gateway. The catalog lists
+              bare ids, so the prefix is stored separately — changing it doesn't change
+              which models are picked. Leave empty to send bare ids. Default:{" "}
+              <code>{settings.prefix.envDefault}</code>.
+              {settings.prefix.source === "db" && settings.prefix.updatedByEmail && (
+                <> Pinned by {settings.prefix.updatedByEmail} on{" "}
+                  {formatDate(settings.prefix.updatedAt)}.</>
+              )}
+            </p>
+          </div>
+
           <div className="space-y-5">
             {LADDER_RUNGS.map(({ rung, label, hint }) => {
               const detail = settings.ladder.find((r) => r.rung === rung)!
@@ -189,7 +225,7 @@ export function AdminChatModelPage() {
                   </Select>
 
                   <p className="text-xs text-muted-foreground">
-                    {hint}
+                    {hint} Sent as <code>{applyPrefix(draft.prefix, draft[rung])}</code>.
                     {detail.source === "db" && detail.updatedByEmail && (
                       <> Pinned by {detail.updatedByEmail} on {formatDate(detail.updatedAt)}.</>
                     )}
@@ -204,7 +240,7 @@ export function AdminChatModelPage() {
 
           <div className="flex items-center gap-2 border-t border-border pt-4">
             <Button onClick={() => void save()} disabled={!dirty || saving}>
-              Save ladder
+              Save
             </Button>
             {dirty && (
               <Button
@@ -226,12 +262,11 @@ export function AdminChatModelPage() {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Reset to environment defaults?</AlertDialogTitle>
+                    <AlertDialogTitle>Reset to defaults?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Drops all three pinned models. The ladder reverts to whatever{" "}
-                      <code>OPENCODE_CHAT_MODEL</code>,{" "}
-                      <code>OPENCODE_CHAT_FALLBACK_MODEL</code> and{" "}
-                      <code>OPENCODE_CHAT_SECOND_FALLBACK_MODEL</code> are set to on
+                      Drops the pinned prefix and all three models. The prefix reverts to{" "}
+                      <code>{settings.prefix.envDefault || "(none)"}</code> and the models
+                      to whatever the <code>OPENCODE_CHAT_*_MODEL</code> vars are set to on
                       the server — which may not be models the gateway still offers.
                     </AlertDialogDescription>
                   </AlertDialogHeader>

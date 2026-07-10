@@ -194,16 +194,21 @@ export interface OpencodeModel {
   ownedBy: string | null
 }
 
-export interface LadderRungDetail {
-  rung: LadderRung
+export interface SettingDetail {
   value: string
-  /** 'db' = pinned by an admin, 'env' = falling back to OPENCODE_CHAT_*_MODEL. */
+  /** 'db' = pinned by an admin, 'env' = falling back to the env var. */
   source: "db" | "env"
   envDefault: string
   updatedByEmail: string | null
   updatedAt: string | null
+}
+
+export interface LadderRungDetail extends SettingDetail {
+  rung: LadderRung
   /** null when the catalog couldn't be fetched, so membership is unknown. */
   inCatalog: boolean | null
+  /** The prefixed id actually sent to the gateway, e.g. "opencode-go/glm-5.2". */
+  resolved: string
 }
 
 export interface ChatModelSettings {
@@ -212,7 +217,21 @@ export interface ChatModelSettings {
   active: boolean
   models: OpencodeModel[]
   catalogError: string | null
+  /** Call-time namespace prepended to every rung. Empty = send bare ids. */
+  prefix: SettingDetail
   ladder: LadderRungDetail[]
+}
+
+export interface ChatModelInput {
+  primary: string
+  fallback: string
+  secondFallback: string
+  prefix: string
+}
+
+interface ChatModelConfig {
+  ladder: LadderRungDetail[]
+  prefix: SettingDetail
 }
 
 export async function fetchChatModelSettings(refresh = false): Promise<ChatModelSettings> {
@@ -220,18 +239,22 @@ export async function fetchChatModelSettings(refresh = false): Promise<ChatModel
   return res.json()
 }
 
-export async function updateChatModelLadder(
-  ladder: Record<LadderRung, string>,
-): Promise<LadderRungDetail[]> {
+export async function updateChatModelConfig(input: ChatModelInput): Promise<ChatModelConfig> {
   const res = await apiFetch("/api/admin/chat-model", {
     method: "PUT",
     headers: json,
-    body: JSON.stringify(ladder),
+    body: JSON.stringify(input),
   })
-  return (await res.json()).ladder
+  return res.json()
 }
 
-export async function resetChatModelLadder(): Promise<LadderRungDetail[]> {
+export async function resetChatModelConfig(): Promise<ChatModelConfig> {
   const res = await apiFetch("/api/admin/chat-model/reset", { method: "POST" })
-  return (await res.json()).ladder
+  return res.json()
+}
+
+/** Mirrors the backend's applyPrefix — used for the live preview in the form. */
+export function applyPrefix(prefix: string, modelId: string): string {
+  const p = prefix.trim().replace(/^\/+|\/+$/g, "")
+  return p ? `${p}/${modelId}` : modelId
 }

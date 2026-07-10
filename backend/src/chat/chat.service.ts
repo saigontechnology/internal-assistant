@@ -127,14 +127,14 @@ export class ChatService {
   }
 
   /**
-   * The ordered OpenCode ladder: primary → first fallback → second fallback.
+   * The ordered OpenCode ladder: primary → first fallback → second fallback,
+   * each already carrying the configured prefix (e.g. `opencode-go/glm-5.2`).
    * Unlike the Gemini ladder this is admin-editable at runtime (see
    * chat-settings.service.ts), so it's a DB read rather than an env read.
-   * Each rung falls back to its env var when no override is stored.
+   * Each setting falls back to its env var when no override is stored.
    */
   private async opencodeLadder(): Promise<string[]> {
-    const ladder = await this.settings.opencodeLadder()
-    return [ladder.primary, ladder.fallback, ladder.secondFallback]
+    return this.settings.resolvedLadder()
   }
 
   /** Pick the first rung whose cooldown has expired, else the last rung. */
