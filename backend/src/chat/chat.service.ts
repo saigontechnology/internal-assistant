@@ -130,7 +130,8 @@ export class ChatService {
 
   /**
    * The ordered OpenCode ladder: primary → first fallback → second fallback,
-   * each already carrying the configured prefix (e.g. `opencode-go/glm-5.2`).
+   * each already carrying the configured prefix — empty by default, so bare
+   * ids like `glm-5.2` for the `/zen/go/v1` gateway.
    * Unlike the Gemini ladder this is admin-editable at runtime (see
    * chat-settings.service.ts), so it's a DB read rather than an env read.
    * Each setting falls back to its env var when no override is stored.

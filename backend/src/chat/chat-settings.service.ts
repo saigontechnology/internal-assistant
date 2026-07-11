@@ -12,8 +12,10 @@ export const OPENCODE_LADDER_KEYS = {
 } as const
 
 /**
- * Namespace prepended to every rung when calling the gateway, e.g. a prefix of
- * `opencode-go` turns the catalog id `glm-5.2` into `opencode-go/glm-5.2`.
+ * Namespace prepended to every rung when calling the gateway. Empty by default
+ * because the `/zen/go/v1` gateway takes bare ids; a non-empty prefix like
+ * `foo` would turn the catalog id `glm-5.2` into `foo/glm-5.2`, for a gateway
+ * that namespaces its models.
  *
  * Stored apart from the rungs on purpose: `GET /models` advertises bare ids, so
  * the catalog stays the source of truth for model *names* while the prefix is
