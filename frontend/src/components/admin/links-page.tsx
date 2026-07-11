@@ -8,6 +8,9 @@ import {
   Plus,
   ArrowsClockwise,
   Trash,
+  LinkSimple,
+  CheckCircle,
+  WarningDiamond,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -57,6 +60,7 @@ import {
   updateAdminList,
   type AdminList,
 } from "@/lib/admin-api"
+import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
 
 export function AdminLinksPage() {
   const [lists, setLists] = useState<AdminList[] | null>(null)
@@ -148,42 +152,56 @@ export function AdminLinksPage() {
     }
   }
 
+  const enabledCount = lists?.filter((l) => l.enabled).length ?? 0
+  const unresolvedCount = lists?.filter((l) => !l.targetListId).length ?? 0
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Document links</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Each link points at a SharePoint list whose rows are synced into the index. These
-            rows are the source of truth — the old “Document Distribution List” registry in
-            SharePoint is no longer read.
-          </p>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Sync sources"
+        title="Document links"
+        description="Each link points at a SharePoint list whose rows are synced into the index. These rows are the source of truth — the old “Document Distribution List” registry in SharePoint is no longer read."
+        actions={
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={doImport} disabled={importing}>
+                  {importing ? <CircleNotch className="animate-spin" /> : <DownloadSimple />}
+                  Import registry
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                One-shot migration: copies rows from the legacy SharePoint registry list into
+                the database. Safe to run more than once.
+              </TooltipContent>
+            </Tooltip>
+            <Button onClick={() => setEditing("new")}>
+              <Plus />
+              Add link
+            </Button>
+          </>
+        }
+      />
+
+      {lists && lists.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Links" value={lists.length} icon={LinkSimple} />
+          <StatCard label="Enabled" value={enabledCount} icon={CheckCircle} tone="primary" />
+          <StatCard
+            label="Unresolved"
+            value={unresolvedCount}
+            hint={unresolvedCount ? "URL not resolvable" : "all resolved"}
+            icon={WarningDiamond}
+            tone={unresolvedCount ? "destructive" : "default"}
+          />
         </div>
-        <div className="flex gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" onClick={doImport} disabled={importing}>
-                {importing ? <CircleNotch className="animate-spin" /> : <DownloadSimple />}
-                Import registry
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              One-shot migration: copies rows from the legacy SharePoint registry list into
-              the database. Safe to run more than once.
-            </TooltipContent>
-          </Tooltip>
-          <Button onClick={() => setEditing("new")}>
-            <Plus />
-            Add link
-          </Button>
-        </div>
-      </div>
+      )}
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        <ErrorBanner>
           <WarningCircle className="size-4 shrink-0" />
           {error}
-        </div>
+        </ErrorBanner>
       ) : !lists ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -191,23 +209,26 @@ export function AdminLinksPage() {
           ))}
         </div>
       ) : lists.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">
+        <Panel className="p-10 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <LinkSimple className="size-5" />
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
             No document links yet. Nothing will sync until you add one.
           </p>
-          <div className="mt-3 flex justify-center gap-2">
+          <div className="mt-4 flex justify-center gap-2">
             <Button variant="outline" onClick={doImport} disabled={importing}>
               Import from SharePoint registry
             </Button>
             <Button onClick={() => setEditing("new")}>Add link</Button>
           </div>
-        </div>
+        </Panel>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <Panel className="overflow-x-auto">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
+            <TableHeader className="bg-muted/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4">Name</TableHead>
                 <TableHead>SharePoint list URL</TableHead>
                 <TableHead>Last sync</TableHead>
                 <TableHead className="text-center">Enabled</TableHead>
@@ -217,7 +238,7 @@ export function AdminLinksPage() {
             <TableBody>
               {lists.map((l) => (
                 <TableRow key={l.id} className={l.enabled ? "" : "opacity-55"}>
-                  <TableCell>
+                  <TableCell className="pl-4">
                     <div className="font-medium">{l.displayName}</div>
                     {l.note && (
                       <div className="max-w-xs truncate text-xs text-muted-foreground">
@@ -326,7 +347,7 @@ export function AdminLinksPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </Panel>
       )}
 
       {editing && (

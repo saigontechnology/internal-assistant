@@ -28,6 +28,7 @@ import {
   updateAdminSettings,
   type AdminSettings,
 } from "@/lib/admin-api"
+import { PageHeader } from "./admin-ui"
 
 type Draft = Record<string, string>
 
@@ -102,9 +103,9 @@ export function AdminSettingsPage() {
   if (loading && !data) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
-        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-9 w-48" />
         {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-40 w-full" />
+          <Skeleton key={i} className="h-40 w-full rounded-xl" />
         ))}
       </div>
     )
@@ -113,14 +114,11 @@ export function AdminSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Runtime configuration. A setting you haven't touched falls back to its
-          environment variable, so an untouched deployment behaves exactly as before.
-          Changes apply within 30 seconds, without a restart.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Configuration"
+        title="Settings"
+        description="Runtime configuration. A setting you haven't touched falls back to its environment variable, so an untouched deployment behaves exactly as before. Changes apply within 30 seconds, without a restart."
+      />
 
       {data.groups.map((g) => {
         const rows = data.settings.filter((s) => s.group === g.group)
@@ -128,11 +126,13 @@ export function AdminSettingsPage() {
         return (
           <section key={g.group} className="space-y-4">
             <div>
-              <h2 className="text-sm font-semibold text-foreground">{g.title}</h2>
+              <h2 className="font-heading text-base font-medium tracking-tight text-foreground">
+                {g.title}
+              </h2>
               <p className="text-xs text-muted-foreground">{g.blurb}</p>
             </div>
 
-            <div className="space-y-5 rounded-md border border-border p-4">
+            <div className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-xs">
               {rows.map((s) => (
                 <div key={s.key} className="space-y-1.5">
                   <div className="flex items-center gap-2">
@@ -208,8 +208,8 @@ export function AdminSettingsPage() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-            <Lock className="size-3.5" />
+          <h2 className="flex items-center gap-1.5 font-heading text-base font-medium tracking-tight text-foreground">
+            <Lock className="size-4 text-muted-foreground" />
             Environment
           </h2>
           <p className="text-xs text-muted-foreground">
@@ -218,7 +218,7 @@ export function AdminSettingsPage() {
           </p>
         </div>
 
-        <div className="overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
           {data.environment.map((e, i) => (
             <div
               key={e.name}

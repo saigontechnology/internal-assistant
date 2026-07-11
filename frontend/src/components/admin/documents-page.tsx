@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from "react"
-import { WarningCircle, ArrowsClockwise, Trash, ArrowSquareOut, CircleNotch } from "@phosphor-icons/react"
+import {
+  WarningCircle,
+  ArrowsClockwise,
+  Trash,
+  ArrowSquareOut,
+  CircleNotch,
+  FileText,
+  Stack,
+  Clock,
+  MagnifyingGlass,
+} from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,6 +52,7 @@ import {
   runFullSync,
   type AdminDocument,
 } from "@/lib/admin-api"
+import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
 
 const STATUSES = [
   { value: "all", label: "All statuses" },
@@ -145,28 +156,47 @@ export function AdminDocumentsPage() {
     }
   }
 
+  const totalChunks = docs?.reduce((sum, d) => sum + d.chunkCount, 0) ?? 0
+  const pendingCount = docs?.filter((d) => d.syncStatus !== "synced").length ?? 0
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Documents</h1>
-          <p className="text-sm text-muted-foreground">
-            Every indexed document, unfiltered by job profile.
-          </p>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Knowledge base"
+        title="Documents"
+        description="Every indexed document, unfiltered by job profile."
+        actions={
+          <Button onClick={doFullSync} disabled={syncing}>
+            {syncing ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />}
+            {syncing ? "Syncing…" : "Run full sync"}
+          </Button>
+        }
+      />
+
+      {docs && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Documents" value={docs.length} icon={FileText} />
+          <StatCard label="Embedding chunks" value={totalChunks} icon={Stack} tone="primary" />
+          <StatCard
+            label="Needs attention"
+            value={pendingCount}
+            hint={pendingCount ? "not fully synced" : "all synced"}
+            icon={Clock}
+            tone={pendingCount ? "destructive" : "default"}
+          />
         </div>
-        <Button onClick={doFullSync} disabled={syncing}>
-          {syncing ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />}
-          {syncing ? "Syncing…" : "Run full sync"}
-        </Button>
-      </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
-        <Input
-          placeholder="Search filename or code…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-xs"
-        />
+        <div className="relative max-w-xs flex-1">
+          <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search filename or code…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-48">
             <SelectValue />
@@ -182,10 +212,10 @@ export function AdminDocumentsPage() {
       </div>
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        <ErrorBanner>
           <WarningCircle className="size-4 shrink-0" />
           {error}
-        </div>
+        </ErrorBanner>
       ) : !docs ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -193,16 +223,16 @@ export function AdminDocumentsPage() {
           ))}
         </div>
       ) : docs.length === 0 ? (
-        <p className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+        <Panel className="p-10 text-center text-sm text-muted-foreground">
           No documents match.
-        </p>
+        </Panel>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-md border border-border">
+          <Panel className="overflow-x-auto">
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Document</TableHead>
+              <TableHeader className="bg-muted/40">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">Document</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Chunks</TableHead>
                   <TableHead>Lists</TableHead>
@@ -212,7 +242,7 @@ export function AdminDocumentsPage() {
               <TableBody>
                 {docs.map((d) => (
                   <TableRow key={d.id}>
-                    <TableCell>
+                    <TableCell className="pl-4">
                       <div className="flex items-center gap-2">
                         <span className="max-w-xs truncate font-medium">{d.filename}</span>
                         {d.sharepointUrl && (
@@ -301,7 +331,7 @@ export function AdminDocumentsPage() {
                 ))}
               </TableBody>
             </Table>
-          </div>
+          </Panel>
 
           {nextCursor && (
             <div className="flex justify-center">

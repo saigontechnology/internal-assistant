@@ -33,6 +33,7 @@ import {
   type ChatModelInput,
   type ChatModelSettings,
 } from "@/lib/admin-api"
+import { PageHeader } from "./admin-ui"
 
 function draftFrom(settings: ChatModelSettings): ChatModelInput {
   const byRung = Object.fromEntries(settings.ladder.map((r) => [r.rung, r.value]))
@@ -111,27 +112,25 @@ export function AdminChatModelPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Chat model</h1>
-          <p className="text-sm text-muted-foreground">
-            The OpenCode fallback ladder. Each rung is tried in order; a rung that
-            returns a rate limit cools down for 60 seconds and the next one takes over.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load(true)}
-          disabled={loading || saving}
-        >
-          <ArrowsClockwise className={loading ? "animate-spin" : undefined} />
-          Refresh catalog
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Generation"
+        title="Chat model"
+        description="The OpenCode fallback ladder. Each rung is tried in order; a rung that returns a rate limit cools down for 60 seconds and the next one takes over."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(true)}
+            disabled={loading || saving}
+          >
+            <ArrowsClockwise className={loading ? "animate-spin" : undefined} />
+            Refresh catalog
+          </Button>
+        }
+      />
 
       {settings && !settings.active && (
-        <div className="flex gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="flex gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-sm">
           <WarningCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <p className="text-foreground">
             <code>CHAT_PROVIDER</code> is <strong>{settings.provider}</strong>, not{" "}
@@ -142,7 +141,7 @@ export function AdminChatModelPage() {
       )}
 
       {settings?.catalogError && (
-        <div className="flex gap-2.5 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+        <div className="flex gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm">
           <WarningCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-foreground">{settings.catalogError}</p>
         </div>
@@ -150,14 +149,14 @@ export function AdminChatModelPage() {
 
       {loading && !settings ? (
         <div className="space-y-4">
-          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full rounded-xl" />
           {LADDER_RUNGS.map((r) => (
-            <Skeleton key={r.rung} className="h-20 w-full" />
+            <Skeleton key={r.rung} className="h-20 w-full rounded-xl" />
           ))}
         </div>
       ) : settings && draft ? (
         <>
-          <div className="space-y-1.5 rounded-md border border-border p-4">
+          <div className="space-y-1.5 rounded-xl border border-border bg-card p-5 shadow-xs">
             <div className="flex items-center gap-2">
               <Label htmlFor="prefix">Model prefix</Label>
               <Badge variant={settings.prefix.source === "db" ? "default" : "secondary"}>
@@ -183,7 +182,7 @@ export function AdminChatModelPage() {
             </p>
           </div>
 
-          <div className="space-y-5">
+          <div className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-xs">
             {LADDER_RUNGS.map(({ rung, label, hint }) => {
               const detail = settings.ladder.find((r) => r.rung === rung)!
               // A stored value the gateway no longer offers can't be a Select

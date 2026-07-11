@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
-import { ArrowsClockwise, PencilSimple, WarningCircle } from "@phosphor-icons/react"
+import {
+  ArrowsClockwise,
+  PencilSimple,
+  WarningCircle,
+  Users as UsersIcon,
+  ShieldCheck,
+  CheckCircle,
+} from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +43,7 @@ import {
   type UpdateUserPatch,
 } from "@/lib/admin-api"
 import { useAuth } from "@/lib/auth"
+import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
 
 function formatDate(value: string | null): string {
   if (!value) return "—"
@@ -91,38 +99,58 @@ export function AdminUsersPage() {
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+      <ErrorBanner>
         <WarningCircle className="size-4 shrink-0" />
         {error}
-      </div>
+      </ErrorBanner>
     )
   }
 
   if (!users) {
     return (
-      <div className="space-y-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
+      <div className="space-y-6">
+        <Skeleton className="h-9 w-40" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-[4.5rem] w-full rounded-xl" />
+          ))}
+        </div>
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
       </div>
     )
   }
 
+  const adminCount = users.filter((u) => u.role === "admin").length
+  const activeCount = users.filter((u) => u.isActive).length
+
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Users</h1>
-        <p className="text-sm text-muted-foreground">
-          {users.length} known {users.length === 1 ? "user" : "users"}. Rows appear once a
-          person has signed in at least once.
-        </p>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Access control"
+        title="Users"
+        description="Everyone who has signed in at least once. Toggle admin, active, and sync rights, or pin a job profile."
+      />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard label="Known users" value={users.length} icon={UsersIcon} />
+        <StatCard label="Admins" value={adminCount} icon={ShieldCheck} tone="primary" />
+        <StatCard
+          label="Active"
+          value={activeCount}
+          hint={`${users.length - activeCount} deactivated`}
+          icon={CheckCircle}
+        />
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-border">
+      <Panel className="overflow-x-auto">
         <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Email</TableHead>
+          <TableHeader className="bg-muted/40">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="pl-4">Email</TableHead>
               <TableHead>Job profile</TableHead>
               <TableHead className="text-center">Admin</TableHead>
               <TableHead className="text-center">Active</TableHead>
@@ -137,7 +165,7 @@ export function AdminUsersPage() {
               const disabled = busy === u.email
               return (
                 <TableRow key={u.email} className={u.isActive ? "" : "opacity-55"}>
-                  <TableCell className="font-medium">
+                  <TableCell className="pl-4 font-medium">
                     <div className="flex items-center gap-2">
                       <span className="truncate">{u.email}</span>
                       {isSelf && <Badge variant="secondary">you</Badge>}
@@ -277,7 +305,7 @@ export function AdminUsersPage() {
             })}
           </TableBody>
         </Table>
-      </div>
+      </Panel>
 
       {editing && (
         <EditProfileDialog
