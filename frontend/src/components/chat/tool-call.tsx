@@ -209,7 +209,7 @@ export function ToolCall({ part }: ToolCallProps) {
           )}
         />
         {isStreaming ? (
-          <span className="shimmer-text font-medium">{view.runningLabel}</span>
+          <span className="thinking-text font-medium">{view.runningLabel}</span>
         ) : (
           <>
             <span className="font-medium text-foreground">{view.doneLabel}</span>

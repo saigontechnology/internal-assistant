@@ -21,13 +21,7 @@ function EmptyState({
   onSuggestionClick?: (text: string) => void;
 }) {
   return (
-    <div className="relative flex flex-1 items-center overflow-hidden px-6 sm:px-10">
-      {/* Ambient depth — a soft lime bloom bottom-left, barely there, so the
-          section reads as a room rather than a blank page. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(60rem_40rem_at_15%_85%,oklch(0.72_0.18_130/0.06),transparent)]"
-      />
+    <div className="flex flex-1 items-center px-6 sm:px-10">
       <div className="mx-auto -mt-8 w-full max-w-3xl duration-500 animate-in fade-in slide-in-from-bottom-2">
         <div className="label-eyebrow flex items-center gap-2.5 text-primary">
           <span className="inline-block h-px w-7 bg-primary/60" />
@@ -37,7 +31,7 @@ function EmptyState({
         <h2 className="mt-5 text-5xl leading-[0.95] font-light tracking-tight text-foreground text-balance sm:text-6xl md:text-7xl">
           Read between
           <br />
-          <span className="font-normal text-primary italic">the lines.</span>
+          <span className="font-normal text-primary">the lines.</span>
         </h2>
         <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground text-pretty">
           Ask anything of your documents — summaries, comparisons, the exact
@@ -99,16 +93,21 @@ export function MessageList({
           />
         ))}
         {isWaiting && (
-          <div className="flex gap-3.5 px-1 py-2.5 duration-300 animate-in fade-in">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-sm font-semibold text-primary shadow-xs">
+          <div className="flex gap-3.5 px-1 py-3 duration-300 animate-in fade-in">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 font-heading text-sm font-semibold text-primary shadow-xs">
               A
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <span className="label-eyebrow px-0.5 text-muted-foreground">
                 Alice
               </span>
-              <div className="rounded-lg rounded-tl-sm border border-border bg-card px-4 py-2.5 shadow-xs">
-                <span className="shimmer-text text-sm font-medium">
+              <div className="reply-margin flex items-center gap-2.5">
+                <span className="typing-dots" aria-hidden>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span className="thinking-text text-sm font-medium">
                   Consulting the archive…
                 </span>
               </div>

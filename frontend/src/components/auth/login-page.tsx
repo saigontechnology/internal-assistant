@@ -47,14 +47,7 @@ export function LoginPage() {
   }, []);
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-background">
-      {/* Ambient depth: a lime bloom top-right, a navy wash bottom-left. The
-          sign-in screen should feel like a lit room, not a blank form. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(48rem_36rem_at_85%_-5%,oklch(0.72_0.18_130/0.1),transparent),radial-gradient(42rem_32rem_at_10%_110%,oklch(0.4_0.06_262/0.12),transparent)]"
-      />
-
+    <div className="relative flex min-h-dvh flex-col bg-background">
       <header className="flex h-16 items-center px-5">
         <div className="ml-auto">
           <ThemeToggle />
@@ -63,7 +56,9 @@ export function LoginPage() {
 
       <main className="flex flex-1 items-center justify-center px-6 pb-16">
         <div className="w-full max-w-sm">
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
+            <div aria-hidden className="h-1 bg-primary" />
+            <div className="p-8">
             <div className="flex flex-col items-center text-center">
               <img
                 src={logoUrl}
@@ -108,6 +103,7 @@ export function LoginPage() {
                 </>
               )}
             </Button>
+            </div>
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">

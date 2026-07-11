@@ -194,11 +194,6 @@
   }
 }
 
-@keyframes shimmer-sweep {
-  0% { background-position: 200% 50%; }
-  100% { background-position: -200% 50%; }
-}
-
 @keyframes caret-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
@@ -206,7 +201,14 @@
 
 @keyframes breathe {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  50% { opacity: 0.5; }
+}
+
+/* Three ticks that step up in turn — the classic "typing" cue, built from
+   solid dots rather than a moving gradient. */
+@keyframes dot-step {
+  0%, 70%, 100% { transform: translateY(0); opacity: 0.35; }
+  35% { transform: translateY(-3px); opacity: 1; }
 }
 
 @layer components {
@@ -219,23 +221,34 @@
     font-weight: 500;
   }
 
-  /* Live text while the agent works — the whole phrase sweeps, which reads as
-     one process rather than a passing highlight. */
-  .shimmer-text {
-    background-image: linear-gradient(
-      90deg,
-      var(--muted-foreground) 0%,
-      var(--muted-foreground) 35%,
-      var(--foreground) 50%,
-      var(--muted-foreground) 65%,
-      var(--muted-foreground) 100%
-    );
-    background-size: 200% 100%;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-    animation: shimmer-sweep 2.2s linear infinite;
+  /* Live status while the agent works. A quiet opacity breath reads as "in
+     progress" without a moving highlight — no gradient, just presence. */
+  .thinking-text {
+    color: var(--muted-foreground);
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+
+  /* Typing indicator — three ticks stepping in sequence. */
+  .typing-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+  }
+  .typing-dots > span {
+    width: 0.34rem;
+    height: 0.34rem;
+    border-radius: 9999px;
+    background-color: var(--primary);
+    animation: dot-step 1.2s ease-in-out infinite;
+  }
+  .typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
+
+  /* The document margin — a hairline rule down the left of an assistant reply,
+     the way an annotation sits beside a page. This is the signature. */
+  .reply-margin {
+    border-left: 1px solid var(--spine);
+    padding-left: 1.125rem;
   }
 
   .streaming-caret {
@@ -346,9 +359,11 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .shimmer-text {
+  .thinking-text,
+  .typing-dots > span {
     animation: none;
-    -webkit-text-fill-color: var(--muted-foreground);
-    color: var(--muted-foreground);
+  }
+  .typing-dots > span {
+    opacity: 0.6;
   }
 }

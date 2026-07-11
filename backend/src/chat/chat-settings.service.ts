@@ -27,8 +27,14 @@ export const OPENCODE_PREFIX_KEY = 'opencode.model_prefix'
  * an env var: it's a property of the gateway's routing scheme, identical across
  * every deployment, so there's nothing for an operator to tune. Admins who need
  * a different namespace change it at /admin/chat-model.
+ *
+ * EMPTY by design: the OpenCode Zen "Go" gateway (`/zen/go/v1`) expects the
+ * BARE catalog ids — sending `opencode-go/glm-5.2` returns
+ * `ModelError: Model opencode-go/glm-5.2 is not supported`, while `glm-5.2`
+ * is accepted. The prefix mechanism is kept for gateways that DO namespace,
+ * but the Go plan needs no prefix.
  */
-export const DEFAULT_OPENCODE_MODEL_PREFIX = 'opencode-go'
+export const DEFAULT_OPENCODE_MODEL_PREFIX = ''
 
 /** Every app_settings key this service owns. Reset drops exactly these. */
 const ALL_KEYS = [...Object.values(OPENCODE_LADDER_KEYS), OPENCODE_PREFIX_KEY]
