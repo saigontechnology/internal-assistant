@@ -1,15 +1,15 @@
 import { useState } from "react"
 import { Markdown } from "./markdown"
 import {
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  CornerDownRight,
-  Library,
-  Search,
-  Telescope,
-  type LucideIcon,
-} from "lucide-react"
+  WarningCircle,
+  CaretDown,
+  CaretRight,
+  ArrowElbowDownRight,
+  Books,
+  MagnifyingGlass,
+  Binoculars,
+  type Icon,
+} from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 type NestedPart = {
@@ -43,7 +43,7 @@ interface ToolCallProps {
 }
 
 interface ToolView {
-  icon: LucideIcon
+  icon: Icon
   runningLabel: string
   doneLabel: string
   detail?: string
@@ -59,7 +59,7 @@ function getView(part: ToolPart): ToolView {
 
   if (toolName === "listDocuments") {
     return {
-      icon: Library,
+      icon: Books,
       runningLabel: "Listing documents…",
       doneLabel: "Listed documents",
       errorLabel: "List failed",
@@ -70,7 +70,7 @@ function getView(part: ToolPart): ToolView {
   if (toolName === "research") {
     const question = part.input?.question
     return {
-      icon: Telescope,
+      icon: Binoculars,
       runningLabel: question
         ? `Researching "${question}"…`
         : "Researching…",
@@ -87,7 +87,7 @@ function getView(part: ToolPart): ToolView {
       ? ` in ${filenames.join(", ")}`
       : ""
   return {
-    icon: Search,
+    icon: MagnifyingGlass,
     runningLabel: query
       ? `Searching for "${query}"${scope}…`
       : "Searching documents…",
@@ -100,13 +100,13 @@ function getView(part: ToolPart): ToolView {
 
 function SubStepLine({ part }: { part: NestedPart }) {
   const toolName = part.type.replace(/^tool-/, "")
-  let icon: LucideIcon = Search
+  let icon: Icon = MagnifyingGlass
   let label = toolName
   if (toolName === "listDocuments") {
-    icon = Library
+    icon = Books
     label = "Listing documents"
   } else if (toolName === "retrieveResources") {
-    icon = Search
+    icon = MagnifyingGlass
     const q = part.input?.query
     const scope = part.input?.filenames?.length
       ? ` in ${part.input.filenames.join(", ")}`
@@ -116,7 +116,7 @@ function SubStepLine({ part }: { part: NestedPart }) {
   const Icon = icon
   return (
     <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-      <CornerDownRight className="mt-0.5 size-3 shrink-0" />
+      <ArrowElbowDownRight className="mt-0.5 size-3 shrink-0" />
       <Icon className="mt-0.5 size-3 shrink-0" />
       <span className="truncate">{label}</span>
     </div>
@@ -172,7 +172,7 @@ export function ToolCall({ part }: ToolCallProps) {
   if (isError) {
     return (
       <div className="mb-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-        <AlertCircle className="size-3.5 shrink-0" />
+        <WarningCircle className="size-3.5 shrink-0" />
         <span className="truncate">
           {view.errorLabel}
           {part.errorText ? `: ${part.errorText}` : ""}
@@ -223,9 +223,9 @@ export function ToolCall({ part }: ToolCallProps) {
         {hasBody && (
           <span className="ml-auto shrink-0 text-muted-foreground">
             {expanded ? (
-              <ChevronDown className="size-3.5" />
+              <CaretDown className="size-3.5" />
             ) : (
-              <ChevronRight className="size-3.5" />
+              <CaretRight className="size-3.5" />
             )}
           </span>
         )}

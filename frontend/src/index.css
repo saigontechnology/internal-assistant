@@ -1,16 +1,19 @@
 @import "tailwindcss";
-@import "@fontsource/roboto/300.css";
-@import "@fontsource/roboto/400.css";
-@import "@fontsource/roboto/500.css";
-@import "@fontsource/roboto/700.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/fraunces";
 
 @theme inline {
-  --font-sans: "Roboto", ui-sans-serif, system-ui, -apple-system,
+  /* Editorial pairing: Fraunces (display) over Geist (UI) with Geist Mono for
+     data, labels, and code. A "document room" earns a serif at the top. */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Roboto", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-serif: "Roboto", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  --font-heading: "Fraunces Variable", "Geist Variable", ui-serif, Georgia,
+    serif;
+  --font-serif: var(--font-heading);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -43,84 +46,117 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) - 2px);
-  --radius-md: calc(var(--radius) - 1px);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 3px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Navy-tinted shadows — the light source is one, from above, and the shade
+     it casts carries the interface's cool hue instead of flat black. */
+  --shadow-2xs: 0 1px 2px -1px oklch(0.3 0.04 260 / 0.08);
+  --shadow-xs: 0 1px 2px oklch(0.3 0.04 260 / 0.06),
+    0 1px 3px -1px oklch(0.3 0.04 260 / 0.08);
+  --shadow-sm: 0 1px 2px oklch(0.3 0.04 260 / 0.05),
+    0 2px 6px -1px oklch(0.3 0.04 260 / 0.09);
+  --shadow-md: 0 2px 4px oklch(0.3 0.04 260 / 0.05),
+    0 6px 16px -2px oklch(0.3 0.04 260 / 0.12);
+  --shadow-lg: 0 4px 8px oklch(0.3 0.04 260 / 0.06),
+    0 12px 28px -4px oklch(0.3 0.04 260 / 0.16);
+  --shadow-xl: 0 8px 16px oklch(0.28 0.04 260 / 0.08),
+    0 24px 48px -8px oklch(0.28 0.04 260 / 0.22);
+
+  /* A clean z-index scale — no more magic 9999s. */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 20;
+  --z-overlay: 40;
+  --z-drawer: 50;
+  --z-toast: 60;
 }
 
-/* Light — clean white surfaces, dark-navy sidebar, lime-green primary */
+/* Light — warm-paper surfaces over a cool-navy structure, lime-green primary.
+   Grays are one family (cool, hue 260) so nothing clashes with the sidebar. */
 :root {
-  --background: oklch(0.97 0 0);
+  --background: oklch(0.975 0.003 260);
   --foreground: oklch(0.22 0.01 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.01 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.01 260);
   --primary: oklch(0.72 0.18 130);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.005 260);
+  /* Dark ink on lime, not white. Lime at L=0.72 never clears 4.5:1 against
+     white text; it clears ~8:1 against this ink. The hue is untouched. */
+  --primary-foreground: oklch(0.24 0.03 130);
+  --secondary: oklch(0.955 0.004 260);
   --secondary-foreground: oklch(0.3 0.01 260);
-  --muted: oklch(0.95 0.005 260);
+  --muted: oklch(0.955 0.004 260);
   --muted-foreground: oklch(0.5 0.015 260);
-  --accent: oklch(0.94 0.02 130);
-  --accent-foreground: oklch(0.3 0.05 130);
-  --destructive: oklch(0.6 0.2 27);
+  --accent: oklch(0.945 0.03 130);
+  --accent-foreground: oklch(0.32 0.06 130);
+  --destructive: oklch(0.58 0.2 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.005 260);
+  --border: oklch(0.905 0.005 260);
   --input: oklch(0.9 0.005 260);
   --ring: oklch(0.72 0.18 130);
   --chart-1: oklch(0.72 0.18 130);
   --chart-2: oklch(0.6 0.118 184.714);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.4rem;
-  /* Sidebar = dark navy with white text and green primary accent */
-  --sidebar: oklch(0.27 0.02 260);
+  --chart-3: oklch(0.5 0.09 227);
+  --chart-4: oklch(0.7 0.15 85);
+  --chart-5: oklch(0.6 0.12 40);
+  --radius: 0.625rem;
+
+  /* Sidebar = deep navy with a lime accent. The app's spine. */
+  --sidebar: oklch(0.26 0.025 262);
   --sidebar-foreground: oklch(0.95 0.005 260);
-  --sidebar-primary: oklch(0.72 0.18 130);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.32 0.02 260);
+  --sidebar-primary: oklch(0.78 0.18 130);
+  --sidebar-primary-foreground: oklch(0.22 0.03 130);
+  --sidebar-accent: oklch(0.32 0.025 262);
   --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(0.32 0.02 260);
-  --sidebar-ring: oklch(0.72 0.18 130);
+  --sidebar-border: oklch(0.34 0.025 262);
+  --sidebar-ring: oklch(0.78 0.18 130);
+
+  /* A hairline that reads as a rule, not a border. */
+  --spine: oklch(0.86 0.006 260);
 }
 
-/* Dark — deep navy throughout, lime-green primary */
+/* Dark — the whole room drops into deep navy; lime stays the one bright note. */
 .dark {
-  --background: oklch(0.2 0.015 260);
+  --background: oklch(0.19 0.015 262);
   --foreground: oklch(0.95 0.005 260);
-  --card: oklch(0.24 0.015 260);
+  --card: oklch(0.23 0.016 262);
   --card-foreground: oklch(0.95 0.005 260);
-  --popover: oklch(0.24 0.015 260);
+  --popover: oklch(0.23 0.016 262);
   --popover-foreground: oklch(0.95 0.005 260);
   --primary: oklch(0.78 0.17 130);
-  --primary-foreground: oklch(0.2 0.02 260);
-  --secondary: oklch(0.28 0.015 260);
+  --primary-foreground: oklch(0.2 0.03 130);
+  --secondary: oklch(0.27 0.016 262);
   --secondary-foreground: oklch(0.95 0.005 260);
-  --muted: oklch(0.28 0.015 260);
-  --muted-foreground: oklch(0.7 0.01 260);
-  --accent: oklch(0.3 0.02 260);
+  --muted: oklch(0.27 0.016 262);
+  --muted-foreground: oklch(0.7 0.012 260);
+  --accent: oklch(0.3 0.03 200);
   --accent-foreground: oklch(0.95 0.005 260);
-  --destructive: oklch(0.5 0.18 27);
-  --destructive-foreground: oklch(0.97 0 0);
-  --border: oklch(0.32 0.015 260);
-  --input: oklch(0.32 0.015 260);
+  --destructive: oklch(0.62 0.2 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.31 0.015 262);
+  --input: oklch(0.33 0.015 262);
   --ring: oklch(0.78 0.17 130);
   --chart-1: oklch(0.78 0.17 130);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.17 0.015 260);
+  --chart-2: oklch(0.7 0.13 195);
+  --chart-3: oklch(0.7 0.15 85);
+  --chart-4: oklch(0.66 0.2 300);
+  --chart-5: oklch(0.66 0.18 20);
+  --sidebar: oklch(0.16 0.014 262);
   --sidebar-foreground: oklch(0.95 0.005 260);
   --sidebar-primary: oklch(0.78 0.17 130);
-  --sidebar-primary-foreground: oklch(0.2 0.02 260);
-  --sidebar-accent: oklch(0.24 0.015 260);
+  --sidebar-primary-foreground: oklch(0.2 0.03 130);
+  --sidebar-accent: oklch(0.24 0.016 262);
   --sidebar-accent-foreground: oklch(0.95 0.005 260);
-  --sidebar-border: oklch(0.28 0.015 260);
+  --sidebar-border: oklch(0.27 0.015 262);
   --sidebar-ring: oklch(0.78 0.17 130);
+
+  --spine: oklch(0.34 0.015 262);
 }
 
 @layer base {
@@ -129,16 +165,32 @@
   }
   html {
     font-family: var(--font-sans);
+    scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground;
     letter-spacing: 0;
+    /* Geist stylistic sets: cv11 (single-story a/g refinements), ss01. */
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3 {
-    letter-spacing: -0.02em;
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    /* Fraunces reads best a touch tighter and optically large. */
+    letter-spacing: -0.015em;
+    font-optical-sizing: auto;
   }
   code, kbd, pre, samp {
     font-family: var(--font-mono);
+  }
+  /* Numbers that are measurements, not prose, get tabular figures. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Selection carries the brand instead of the browser's default blue. */
+  ::selection {
+    background-color: oklch(0.72 0.18 130 / 0.24);
   }
 }
 
@@ -152,16 +204,23 @@
   50% { opacity: 0.25; }
 }
 
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 @layer components {
-  /* Small-caps editorial label */
+  /* Small-caps utility label — mono, wide-tracked. The ledger's hand. */
   .label-eyebrow {
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     text-transform: uppercase;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     font-size: 0.6875rem;
     font-weight: 500;
   }
 
+  /* Live text while the agent works — the whole phrase sweeps, which reads as
+     one process rather than a passing highlight. */
   .shimmer-text {
     background-image: linear-gradient(
       90deg,
@@ -190,66 +249,106 @@
     animation: caret-pulse 1s ease-in-out infinite;
   }
 
+  /* Prose for assistant messages. Emphasis is carried by weight and color, not
+     slant — Geist has no true italic worth the name. */
   .prose-message {
     @apply text-sm leading-relaxed;
   }
   .prose-message > * + * {
-    @apply mt-3;
+    @apply mt-3.5;
   }
   .prose-message p {
     @apply m-0;
   }
   .prose-message strong {
-    @apply font-semibold;
+    @apply font-semibold text-foreground;
   }
   .prose-message em {
-    @apply italic;
+    @apply font-medium text-foreground not-italic;
   }
   .prose-message a {
-    @apply text-primary underline underline-offset-2 hover:text-primary/80;
+    @apply font-medium text-foreground underline decoration-primary decoration-2 underline-offset-[3px] hover:decoration-primary/60;
     overflow-wrap: anywhere;
   }
   .prose-message h1 {
-    @apply text-xl font-semibold tracking-tight;
+    @apply text-lg font-semibold tracking-tight;
+    font-family: var(--font-heading);
   }
   .prose-message h2 {
-    @apply text-lg font-semibold tracking-tight;
+    @apply text-base font-semibold tracking-tight;
+    font-family: var(--font-heading);
   }
   .prose-message h3 {
     @apply text-sm font-semibold tracking-tight;
   }
   .prose-message ul {
-    @apply list-disc space-y-1 pl-5 marker:text-primary/60;
+    @apply list-none space-y-1.5 pl-0;
+  }
+  .prose-message ul > li {
+    @apply relative pl-4;
+  }
+  /* A small lime lozenge, rotated — echoes the tool-step ticks. */
+  .prose-message ul > li::before {
+    content: "";
+    position: absolute;
+    left: 0.125rem;
+    top: 0.62em;
+    width: 0.28rem;
+    height: 0.28rem;
+    background-color: var(--primary);
+    transform: rotate(45deg);
   }
   .prose-message ol {
-    @apply list-decimal space-y-1 pl-5 marker:text-primary/60;
+    @apply list-decimal space-y-1.5 pl-5;
+    font-variant-numeric: tabular-nums;
+  }
+  .prose-message ol > li::marker {
+    @apply font-mono text-xs text-muted-foreground;
   }
   .prose-message li > p {
     @apply inline;
   }
   .prose-message blockquote {
-    @apply border-l-2 border-primary/40 pl-3 text-muted-foreground italic;
+    @apply border-l-2 border-primary/50 pl-3.5 text-muted-foreground not-italic;
   }
   .prose-message code {
-    @apply rounded bg-foreground/[0.06] px-1 py-0.5 font-mono text-[0.85em];
+    @apply rounded-sm bg-foreground/[0.06] px-1 py-0.5 font-mono text-[0.85em];
   }
   .prose-message pre {
-    @apply overflow-x-auto rounded-lg bg-foreground/[0.05] p-3 text-xs;
+    @apply overflow-x-auto rounded-lg border border-border bg-foreground/[0.035] p-3.5 text-xs;
   }
   .prose-message pre code {
     @apply bg-transparent p-0 text-xs;
   }
   .prose-message table {
-    @apply w-full border-collapse text-xs;
+    @apply block w-full max-w-full overflow-x-auto border-collapse text-xs;
+    font-variant-numeric: tabular-nums;
   }
   .prose-message th,
   .prose-message td {
-    @apply border border-border px-2 py-1 text-left;
+    @apply border-b border-border px-2.5 py-1.5 text-left;
   }
   .prose-message th {
-    @apply bg-foreground/[0.04] font-semibold;
+    @apply border-b-foreground/20 pb-1 font-mono text-[0.6875rem] font-medium text-muted-foreground uppercase;
+    letter-spacing: 0.14em;
   }
   .prose-message hr {
     @apply border-border;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .shimmer-text {
+    animation: none;
+    -webkit-text-fill-color: var(--muted-foreground);
+    color: var(--muted-foreground);
   }
 }

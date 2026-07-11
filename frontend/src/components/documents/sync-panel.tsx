@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock } from "lucide-react"
+import { CircleNotch, ArrowsClockwise, WarningCircle, CheckCircle, Clock } from "@phosphor-icons/react"
 import {
   fetchSyncStatus,
   triggerSync,
@@ -151,7 +151,7 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
         {/* Status counts — empty state when nothing's synced yet. */}
         {isLoadingStatus ? (
           <div className="flex h-10 items-center justify-center text-xs text-muted-foreground">
-            <Loader2 className="mr-2 size-3.5 animate-spin" /> Loading…
+            <CircleNotch className="mr-2 size-3.5 animate-spin" /> Loading…
           </div>
         ) : total === 0 ? (
           <p className="py-1 text-xs text-muted-foreground">
@@ -186,12 +186,12 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
         >
           {isSyncing ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <CircleNotch className="size-4 animate-spin" />
               Syncing…
             </>
           ) : (
             <>
-              <RefreshCw className="size-4" />
+              <ArrowsClockwise className="size-4" />
               Sync now
             </>
           )}
@@ -206,12 +206,12 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
         >
           {isRefreshing ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <CircleNotch className="size-4 animate-spin" />
               Refreshing…
             </>
           ) : (
             <>
-              <RefreshCw className="size-4" />
+              <ArrowsClockwise className="size-4" />
               Refresh
             </>
           )}
@@ -236,11 +236,11 @@ export function SyncPanel({ onSyncComplete }: SyncPanelProps) {
         <div className="rounded-lg border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {lastRun.status === "ok" ? (
-              <CheckCircle2 className="size-3.5 text-emerald-500" />
+              <CheckCircle className="size-3.5 text-emerald-500" />
             ) : lastRun.status === "partial" ? (
-              <AlertCircle className="size-3.5 text-amber-500" />
+              <WarningCircle className="size-3.5 text-amber-500" />
             ) : (
-              <AlertCircle className="size-3.5 text-destructive" />
+              <WarningCircle className="size-3.5 text-destructive" />
             )}
             <span className="font-medium capitalize text-foreground/80">{lastRun.status}</span>
             <span>· {formatDuration(lastRun.durationMs)}</span>

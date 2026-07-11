@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { AlertCircle, RefreshCw, RotateCcw } from "lucide-react"
+import { WarningCircle, ArrowsClockwise, ArrowCounterClockwise } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -125,14 +125,14 @@ export function AdminChatModelPage() {
           onClick={() => void load(true)}
           disabled={loading || saving}
         >
-          <RefreshCw className={loading ? "animate-spin" : undefined} />
+          <ArrowsClockwise className={loading ? "animate-spin" : undefined} />
           Refresh catalog
         </Button>
       </div>
 
       {settings && !settings.active && (
         <div className="flex gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <WarningCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <p className="text-foreground">
             <code>CHAT_PROVIDER</code> is <strong>{settings.provider}</strong>, not{" "}
             <code>opencode</code>. You can set the model here, but chat will keep using
@@ -143,7 +143,7 @@ export function AdminChatModelPage() {
 
       {settings?.catalogError && (
         <div className="flex gap-2.5 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <WarningCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-foreground">{settings.catalogError}</p>
         </div>
       )}
@@ -256,7 +256,7 @@ export function AdminChatModelPage() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="ghost" className="ml-auto" disabled={saving}>
-                    <RotateCcw />
+                    <ArrowCounterClockwise />
                     Reset to env
                   </Button>
                 </AlertDialogTrigger>

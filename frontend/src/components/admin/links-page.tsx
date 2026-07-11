@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import {
-  AlertCircle,
-  DownloadCloud,
-  ExternalLink,
-  Loader2,
-  Pencil,
+  WarningCircle,
+  DownloadSimple,
+  ArrowSquareOut,
+  CircleNotch,
+  PencilSimple,
   Plus,
-  RefreshCw,
-  Trash2,
-} from "lucide-react"
+  ArrowsClockwise,
+  Trash,
+} from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -163,7 +163,7 @@ export function AdminLinksPage() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" onClick={doImport} disabled={importing}>
-                {importing ? <Loader2 className="animate-spin" /> : <DownloadCloud />}
+                {importing ? <CircleNotch className="animate-spin" /> : <DownloadSimple />}
                 Import registry
               </Button>
             </TooltipTrigger>
@@ -181,7 +181,7 @@ export function AdminLinksPage() {
 
       {error ? (
         <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
+          <WarningCircle className="size-4 shrink-0" />
           {error}
         </div>
       ) : !lists ? (
@@ -234,7 +234,7 @@ export function AdminLinksPage() {
                       className="flex max-w-sm items-center gap-1 truncate text-sm text-muted-foreground hover:text-foreground"
                     >
                       <span className="truncate">{l.listUrl}</span>
-                      <ExternalLink className="size-3 shrink-0" />
+                      <ArrowSquareOut className="size-3 shrink-0" />
                     </a>
                     {!l.targetListId && (
                       <Badge variant="destructive" className="mt-1">
@@ -251,7 +251,7 @@ export function AdminLinksPage() {
                       {l.lastSyncError && (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <AlertCircle className="size-3.5 text-destructive" />
+                            <WarningCircle className="size-3.5 text-destructive" />
                           </TooltipTrigger>
                           <TooltipContent className="max-w-sm">{l.lastSyncError}</TooltipContent>
                         </Tooltip>
@@ -284,9 +284,9 @@ export function AdminLinksPage() {
                             aria-label="Sync now"
                           >
                             {busy === l.id ? (
-                              <Loader2 className="animate-spin" />
+                              <CircleNotch className="animate-spin" />
                             ) : (
-                              <RefreshCw />
+                              <ArrowsClockwise />
                             )}
                           </Button>
                         </TooltipTrigger>
@@ -301,7 +301,7 @@ export function AdminLinksPage() {
                             onClick={() => setEditing(l)}
                             aria-label="Edit"
                           >
-                            <Pencil />
+                            <PencilSimple />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Edit</TooltipContent>
@@ -315,7 +315,7 @@ export function AdminLinksPage() {
                             onClick={() => setConfirmDelete(l)}
                             aria-label="Delete"
                           >
-                            <Trash2 className="text-destructive" />
+                            <Trash className="text-destructive" />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Delete</TooltipContent>
@@ -445,7 +445,7 @@ function LinkDialog({
 
           {formError && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <WarningCircle className="mt-0.5 size-4 shrink-0" />
               {formError}
             </div>
           )}
@@ -456,7 +456,7 @@ function LinkDialog({
             Cancel
           </Button>
           <Button disabled={saving || !displayName.trim() || !listUrl.trim()} onClick={save}>
-            {saving && <Loader2 className="animate-spin" />}
+            {saving && <CircleNotch className="animate-spin" />}
             {list ? "Save" : "Add link"}
           </Button>
         </DialogFooter>

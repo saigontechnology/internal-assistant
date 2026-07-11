@@ -11,7 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { BookOpen, MessageSquarePlus, Trash2, MessageSquare, X } from "lucide-react"
+import { BookOpen, NotePencil, Trash, ChatCircle, X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import logoUrlWhite from "@/assets/logo_white.svg"
 
@@ -49,7 +49,7 @@ function ConversationList() {
           closeSidebar()
         }}
       >
-        <MessageSquarePlus className="size-4" />
+        <NotePencil className="size-4" />
         New chat
       </Button>
 
@@ -89,7 +89,8 @@ function ConversationList() {
               {isActive && (
                 <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />
               )}
-              <MessageSquare
+              <ChatCircle
+                weight={isActive ? "fill" : "regular"}
                 className={cn(
                   "size-3.5 shrink-0",
                   isActive && "text-primary"
@@ -106,7 +107,7 @@ function ConversationList() {
                 }}
                 className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
               >
-                <Trash2 className="size-3.5" />
+                <Trash className="size-3.5" />
               </button>
             </div>
           )
@@ -196,7 +197,7 @@ export function Sidebar() {
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                   )}
                 >
-                  <MessageSquare className="size-5" />
+                  <ChatCircle className="size-5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Chats</TooltipContent>

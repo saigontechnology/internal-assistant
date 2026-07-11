@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RefreshCw, Pencil, AlertCircle } from "lucide-react"
+import { ArrowsClockwise, PencilSimple, WarningCircle } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -92,7 +92,7 @@ export function AdminUsersPage() {
   if (error) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-        <AlertCircle className="size-4 shrink-0" />
+        <WarningCircle className="size-4 shrink-0" />
         {error}
       </div>
     )
@@ -146,7 +146,7 @@ export function AdminUsersPage() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="mt-0.5 flex w-fit items-center gap-1 text-xs text-destructive">
-                            <AlertCircle className="size-3" /> sync error
+                            <WarningCircle className="size-3" /> sync error
                           </span>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-sm">{u.lastError}</TooltipContent>
@@ -251,7 +251,7 @@ export function AdminUsersPage() {
                             onClick={() => setEditing(u)}
                             aria-label="Edit job profile"
                           >
-                            <Pencil />
+                            <PencilSimple />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Edit job profile</TooltipContent>
@@ -265,7 +265,7 @@ export function AdminUsersPage() {
                             onClick={() => resync(u.email)}
                             aria-label="Force profile resync"
                           >
-                            <RefreshCw />
+                            <ArrowsClockwise />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Force profile resync</TooltipContent>

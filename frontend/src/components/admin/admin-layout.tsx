@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ArrowLeft, Bot, FileText, Link2, Settings, Users } from "lucide-react"
+import { ArrowLeft, Robot, FileText, LinkSimple, GearSix, Users } from "@phosphor-icons/react"
 import { NavLink, Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils"
 const NAV = [
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/documents", label: "Documents", icon: FileText },
-  { to: "/admin/links", label: "Links", icon: Link2 },
-  { to: "/admin/chat-model", label: "Chat model", icon: Bot },
-  { to: "/admin/settings", label: "Settings", icon: Settings },
+  { to: "/admin/links", label: "Links", icon: LinkSimple },
+  { to: "/admin/chat-model", label: "Chat model", icon: Robot },
+  { to: "/admin/settings", label: "Settings", icon: GearSix },
 ]
 
 export function AdminLayout({ children }: { children: ReactNode }) {
@@ -23,26 +23,41 @@ export function AdminLayout({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-card p-4 md:flex">
         <div className="mb-6 px-2">
-          <p className="text-sm font-semibold text-foreground">Admin portal</p>
-          <p className="truncate text-xs text-muted-foreground">{user?.username}</p>
+          <p className="label-eyebrow text-muted-foreground">Internal Assistant</p>
+          <p className="mt-1 font-heading text-lg font-medium tracking-tight text-foreground">
+            Admin portal
+          </p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {user?.username}
+          </p>
         </div>
 
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-col gap-0.5">
           {NAV.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+                  "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
                   isActive
-                    ? "bg-muted font-medium text-foreground"
+                    ? "bg-accent font-medium text-foreground"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                 )
               }
             >
-              <Icon className="size-4" />
-              {label}
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />
+                  )}
+                  <Icon
+                    className={cn("size-4", isActive && "text-primary")}
+                    weight={isActive ? "fill" : "regular"}
+                  />
+                  {label}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>

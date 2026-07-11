@@ -3,13 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Trash2,
+  Trash,
   FileText,
   Clock,
-  AlertCircle,
-  ExternalLink,
-  RefreshCw,
-} from "lucide-react";
+  WarningCircle,
+  ArrowSquareOut,
+  ArrowsClockwise,
+} from "@phosphor-icons/react";
 import {
   Tooltip,
   TooltipContent,
@@ -190,7 +190,7 @@ export function DocumentList({
                 {status === "pending_access" ? (
                   <Clock className="size-4" />
                 ) : status === "failed_parse" || status === "failed_resolve" ? (
-                  <AlertCircle className="size-4" />
+                  <WarningCircle className="size-4" />
                 ) : (
                   <FileText className="size-4" />
                 )}
@@ -231,7 +231,7 @@ export function DocumentList({
                             variant="outline"
                             className="cursor-help gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs"
                           >
-                            <RefreshCw className="size-3" />
+                            <ArrowsClockwise className="size-3" />
                             v{doc.sharepointPendingVersion} pending
                           </Badge>
                         </TooltipTrigger>
@@ -292,7 +292,7 @@ export function DocumentList({
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`Open ${tooltipText} in a new tab`}
                   >
-                    <ExternalLink />
+                    <ArrowSquareOut />
                   </a>
                 </Button>
               )}
@@ -303,7 +303,7 @@ export function DocumentList({
                   onClick={() => onDelete(doc.id)}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
                 >
-                  <Trash2 />
+                  <Trash />
                 </Button>
               )}
             </div>

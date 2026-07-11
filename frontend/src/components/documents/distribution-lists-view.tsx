@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle, CheckCircle2, Clock4 } from "lucide-react"
+import { CaretLeft, CaretRight, CircleNotch, WarningCircle, CheckCircle, Clock } from "@phosphor-icons/react"
 import {
   fetchDistributionLists,
   fetchDistributionListItems,
@@ -61,7 +61,7 @@ export function DistributionListsView({ refreshKey }: { refreshKey: number }) {
       </div>
       {isLoading ? (
         <div className="flex flex-1 items-center justify-center text-xs text-sidebar-foreground/60">
-          <Loader2 className="mr-2 size-3.5 animate-spin" /> Loading…
+          <CircleNotch className="mr-2 size-3.5 animate-spin" /> Loading…
         </div>
       ) : error ? (
         <p className="px-4 py-6 text-center text-xs text-destructive">{error}</p>
@@ -142,7 +142,7 @@ function DistributionListRow({
           )}
         </div>
       </div>
-      <ChevronRight className="mt-1 size-4 shrink-0 text-sidebar-foreground/30" />
+      <CaretRight className="mt-1 size-4 shrink-0 text-sidebar-foreground/30" />
     </button>
   )
 }
@@ -198,7 +198,7 @@ function DistributionListDetailView({
           onClick={onBack}
           className="mb-1 flex items-center gap-1 text-[11px] text-sidebar-foreground/60 transition-colors hover:text-sidebar-foreground"
         >
-          <ChevronLeft className="size-3.5" /> All lists
+          <CaretLeft className="size-3.5" /> All lists
         </button>
         <h3 className="text-sm font-semibold text-sidebar-foreground">
           {list?.displayName ?? "List"}
@@ -212,7 +212,7 @@ function DistributionListDetailView({
 
       {isLoading ? (
         <div className="flex flex-1 items-center justify-center text-xs text-sidebar-foreground/60">
-          <Loader2 className="mr-2 size-3.5 animate-spin" /> Loading…
+          <CircleNotch className="mr-2 size-3.5 animate-spin" /> Loading…
         </div>
       ) : error ? (
         <p className="px-4 py-6 text-center text-xs text-destructive">{error}</p>
@@ -292,11 +292,11 @@ function DistributionListDetailView({
 }
 
 function StatusGlyph({ status }: { status: string }) {
-  if (status === "ok") return <CheckCircle2 className="size-3.5 text-emerald-500" />
-  if (status === "partial") return <AlertCircle className="size-3.5 text-amber-500" />
-  if (status === "unresolvable" || status === "removed") return <AlertCircle className="size-3.5 text-destructive" />
-  if (status === "error") return <AlertCircle className="size-3.5 text-destructive" />
-  return <Clock4 className="size-3.5 text-sidebar-foreground/40" />
+  if (status === "ok") return <CheckCircle className="size-3.5 text-emerald-500" />
+  if (status === "partial") return <WarningCircle className="size-3.5 text-amber-500" />
+  if (status === "unresolvable" || status === "removed") return <WarningCircle className="size-3.5 text-destructive" />
+  if (status === "error") return <WarningCircle className="size-3.5 text-destructive" />
+  return <Clock className="size-3.5 text-sidebar-foreground/40" />
 }
 
 function ItemStatus({ status, error }: { status: string; error: string | null }) {

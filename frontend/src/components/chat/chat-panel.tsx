@@ -4,7 +4,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "./message-list";
-import { ArrowUp, Pause } from "lucide-react";
+import { ArrowUp, Pause } from "@phosphor-icons/react";
 import { useConversations } from "@/lib/conversations";
 
 function ActiveChat({
@@ -82,6 +82,12 @@ function ActiveChat({
     sendMessage({ text });
   };
 
+  const sendSuggestion = (text: string) => {
+    if (isActive) return;
+    setInput("");
+    sendMessage({ text });
+  };
+
   // Explicit stop: with `resume: true`, `stop()` alone is treated as a
   // disconnect — the LLM keeps running server-side and a refresh would
   // reconnect. So we tell the server to cancel the underlying run and
@@ -114,7 +120,11 @@ function ActiveChat({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <MessageList messages={messages} status={status} />
+      <MessageList
+        messages={messages}
+        status={status}
+        onSuggestionClick={sendSuggestion}
+      />
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-6">
         {error && (

@@ -9,7 +9,65 @@ interface MessageListProps {
   onSuggestionClick?: (text: string) => void;
 }
 
-export function MessageList({ messages, status }: MessageListProps) {
+const SUGGESTIONS = [
+  "Summarize the latest policy update",
+  "Which documents mention onboarding?",
+  "Compare the Q2 and Q3 reports",
+];
+
+function EmptyState({
+  onSuggestionClick,
+}: {
+  onSuggestionClick?: (text: string) => void;
+}) {
+  return (
+    <div className="relative flex flex-1 items-center overflow-hidden px-6 sm:px-10">
+      {/* Ambient depth — a soft lime bloom bottom-left, barely there, so the
+          section reads as a room rather than a blank page. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(60rem_40rem_at_15%_85%,oklch(0.72_0.18_130/0.06),transparent)]"
+      />
+      <div className="mx-auto -mt-8 w-full max-w-3xl duration-500 animate-in fade-in slide-in-from-bottom-2">
+        <div className="label-eyebrow flex items-center gap-2.5 text-primary">
+          <span className="inline-block h-px w-7 bg-primary/60" />
+          Internal Assistant · Reading Room
+        </div>
+
+        <h2 className="mt-5 text-5xl leading-[0.95] font-light tracking-tight text-foreground text-balance sm:text-6xl md:text-7xl">
+          Read between
+          <br />
+          <span className="font-normal text-primary italic">the lines.</span>
+        </h2>
+        <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground text-pretty">
+          Ask anything of your documents — summaries, comparisons, the exact
+          passage you half-remember. Start with a prompt below.
+        </p>
+
+        {onSuggestionClick && (
+          <div className="mt-7 flex flex-wrap gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onSuggestionClick(s)}
+                className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground shadow-xs transition-all hover:-translate-y-px hover:border-primary/40 hover:text-foreground hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function MessageList({
+  messages,
+  status,
+  onSuggestionClick,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,26 +75,7 @@ export function MessageList({ messages, status }: MessageListProps) {
   }, [messages]);
 
   if (messages.length === 0) {
-    return (
-      <div className="flex flex-1 items-center px-6 sm:px-10">
-        <div className="mx-auto w-full max-w-3xl -mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="label-eyebrow flex items-center gap-2.5 text-primary">
-            <span className="inline-block h-px w-7 bg-primary/60" />
-            Internal Assistant · Reading Room
-          </div>
-
-          <h2 className="mt-5 text-5xl leading-[0.95] font-light tracking-tight text-foreground sm:text-6xl md:text-7xl">
-            Read between
-            <br />
-            <em className="font-normal text-primary italic">the lines.</em>
-          </h2>
-          <p className="mt-5 max-w-md text-base leading-relaxed text-muted-foreground">
-            Ask anything of your documents — summaries, comparisons, the exact
-            passage you half-remember. Start with a prompt below.
-          </p>
-        </div>
-      </div>
-    );
+    return <EmptyState onSuggestionClick={onSuggestionClick} />;
   }
 
   const isWaiting = status === "submitted";
@@ -61,14 +100,14 @@ export function MessageList({ messages, status }: MessageListProps) {
         ))}
         {isWaiting && (
           <div className="flex gap-3.5 px-1 py-2.5 duration-300 animate-in fade-in">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-[0.4rem] border border-primary/30 bg-primary/10 text-sm font-semibold text-primary shadow-sm">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-sm font-semibold text-primary shadow-xs">
               A
             </div>
             <div className="flex flex-col gap-1.5">
               <span className="label-eyebrow px-0.5 text-muted-foreground">
                 Alice
               </span>
-              <div className="rounded-lg rounded-tl-sm border border-border bg-card px-4 py-2.5 shadow-sm">
+              <div className="rounded-lg rounded-tl-sm border border-border bg-card px-4 py-2.5 shadow-xs">
                 <span className="shimmer-text text-sm font-medium">
                   Consulting the archive…
                 </span>

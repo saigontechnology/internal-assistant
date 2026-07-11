@@ -1,4 +1,4 @@
-import { LogOut, Menu, Shield } from "lucide-react"
+import { SignOut, List, ShieldCheck } from "@phosphor-icons/react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
@@ -18,13 +18,13 @@ export function Header() {
         aria-label="Toggle sidebar"
         className="lg:hidden"
       >
-        <Menu />
+        <List />
       </Button>
       <div className="ml-auto flex items-center gap-3">
         {user?.isAdmin && (
           <Button variant="ghost" size="sm" asChild>
             <Link to="/admin">
-              <Shield />
+              <ShieldCheck />
               <span className="hidden sm:inline">Admin</span>
             </Link>
           </Button>
@@ -36,7 +36,7 @@ export function Header() {
               {user.name ?? user.username}
             </span>
             <Button variant="ghost" size="icon-xs" onClick={logout} aria-label="Log out">
-              <LogOut />
+              <SignOut />
             </Button>
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { AlertCircle, RefreshCw, Trash2, ExternalLink, Loader2 } from "lucide-react"
+import { WarningCircle, ArrowsClockwise, Trash, ArrowSquareOut, CircleNotch } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -155,7 +155,7 @@ export function AdminDocumentsPage() {
           </p>
         </div>
         <Button onClick={doFullSync} disabled={syncing}>
-          {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+          {syncing ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />}
           {syncing ? "Syncing…" : "Run full sync"}
         </Button>
       </div>
@@ -183,7 +183,7 @@ export function AdminDocumentsPage() {
 
       {error ? (
         <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
+          <WarningCircle className="size-4 shrink-0" />
           {error}
         </div>
       ) : !docs ? (
@@ -223,7 +223,7 @@ export function AdminDocumentsPage() {
                             className="text-muted-foreground hover:text-foreground"
                             aria-label="Open in SharePoint"
                           >
-                            <ExternalLink className="size-3.5" />
+                            <ArrowSquareOut className="size-3.5" />
                           </a>
                         )}
                       </div>
@@ -239,7 +239,7 @@ export function AdminDocumentsPage() {
                         {d.syncError && (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <AlertCircle className="size-3.5 text-destructive" />
+                              <WarningCircle className="size-3.5 text-destructive" />
                             </TooltipTrigger>
                             <TooltipContent className="max-w-sm">{d.syncError}</TooltipContent>
                           </Tooltip>
@@ -275,7 +275,7 @@ export function AdminDocumentsPage() {
                                 onClick={() => doResync(d)}
                                 aria-label="Re-download on next sync"
                               >
-                                <RefreshCw />
+                                <ArrowsClockwise />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Re-download on next sync</TooltipContent>
@@ -290,7 +290,7 @@ export function AdminDocumentsPage() {
                               onClick={() => setConfirmDelete(d)}
                               aria-label="Delete document"
                             >
-                              <Trash2 className="text-destructive" />
+                              <Trash className="text-destructive" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>Delete</TooltipContent>

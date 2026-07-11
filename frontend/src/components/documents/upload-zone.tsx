@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Cloud, FolderOpen, Loader2, LogIn, Upload } from "lucide-react"
+import { Cloud, FolderOpen, CircleNotch, SignIn, UploadSimple } from "@phosphor-icons/react"
 import { uploadFile } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useAppView } from "@/lib/app-view"
@@ -51,7 +51,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
         onClick={() => fileInputRef.current?.click()}
         className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 text-center transition-colors hover:border-primary/50 hover:bg-accent/30"
       >
-        <Upload className="size-8 text-muted-foreground" />
+        <UploadSimple className="size-8 text-muted-foreground" />
         <div className="text-sm text-muted-foreground">
           <p>Upload a file</p>
           <p className="text-xs">PDF, TXT, DOCX, MD, CSV, XLSX</p>
@@ -59,7 +59,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       </div>
       {isUploading && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
+          <CircleNotch className="size-4 animate-spin" />
           Uploading & indexing...
         </div>
       )}
@@ -80,7 +80,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
           </div>
         </div>
         <Button variant="outline" className="w-full" onClick={login}>
-          <LogIn data-icon="inline-start" />
+          <SignIn data-icon="inline-start" />
           Sign in with Microsoft
         </Button>
       </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Lock, RotateCcw } from "lucide-react"
+import { Lock, ArrowCounterClockwise } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -184,7 +184,7 @@ export function AdminSettingsPage() {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="ghost" className="ml-auto" disabled={saving}>
-                <RotateCcw />
+                <ArrowCounterClockwise />
                 Reset all to env
               </Button>
             </AlertDialogTrigger>

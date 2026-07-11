@@ -6,12 +6,12 @@ import {
   Folder,
   FileText,
   Check,
-  Loader2,
-  ChevronLeft,
-  ChevronRight,
-  Search,
+  CircleNotch,
+  CaretLeft,
+  CaretRight,
+  MagnifyingGlass,
   X,
-} from "lucide-react"
+} from "@phosphor-icons/react"
 import {
   fetchSharePointSites,
   fetchSharePointDrives,
@@ -278,7 +278,7 @@ export function SharePointBrowser() {
                 runSearch(queryInput, 0)
               }}
             >
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <MagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={queryInput}
@@ -295,7 +295,7 @@ export function SharePointBrowser() {
         ) : (
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon-xs" onClick={goBack}>
-              <ChevronLeft />
+              <CaretLeft />
             </Button>
             <span className="truncate text-sm text-muted-foreground">{browseBreadcrumb}</span>
             <Button
@@ -307,7 +307,7 @@ export function SharePointBrowser() {
                 setStep("search")
               }}
             >
-              <Search className="size-3.5" />
+              <MagnifyingGlass className="size-3.5" />
               Search all files
             </Button>
           </div>
@@ -315,7 +315,7 @@ export function SharePointBrowser() {
 
         {isLoading && (step !== "search" || searchFrom === 0) ? (
           <div className="flex flex-1 items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            <CircleNotch className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <ScrollArea className="min-h-0 flex-1">
@@ -335,7 +335,7 @@ export function SharePointBrowser() {
                       onClick={() => runSearch(searchTerm, searchFrom + PAGE_SIZE)}
                       disabled={isLoading}
                     >
-                      {isLoading && <Loader2 className="size-4 animate-spin" data-icon="inline-start" />}
+                      {isLoading && <CircleNotch className="size-4 animate-spin" data-icon="inline-start" />}
                       Load more
                     </Button>
                   )}
@@ -383,7 +383,7 @@ export function SharePointBrowser() {
                         {typeof item.childCount === "number" && (
                           <span className="text-xs text-muted-foreground">{item.childCount}</span>
                         )}
-                        <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                        <CaretRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
                       </button>
                     )
                   }
@@ -404,7 +404,7 @@ export function SharePointBrowser() {
         {selectedFiles.size > 0 && (
           <Button className="w-full" onClick={handleImport} disabled={isImporting}>
             {isImporting ? (
-              <Loader2 className="size-4 animate-spin" data-icon="inline-start" />
+              <CircleNotch className="size-4 animate-spin" data-icon="inline-start" />
             ) : (
               <Cloud data-icon="inline-start" />
             )}

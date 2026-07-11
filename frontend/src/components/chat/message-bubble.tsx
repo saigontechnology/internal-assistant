@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai"
-import { User } from "lucide-react"
+import { User } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { Markdown } from "./markdown"
 import { ToolCall } from "./tool-call"
@@ -39,7 +39,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
     >
       <div
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-[0.4rem] border text-sm shadow-sm",
+          "flex size-8 shrink-0 items-center justify-center rounded-md border text-sm shadow-xs",
           isUser
             ? "border-transparent bg-foreground text-background"
             : "border-primary/30 bg-primary/10 font-semibold text-primary"
