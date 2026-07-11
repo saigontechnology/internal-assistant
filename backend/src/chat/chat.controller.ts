@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Post,
   Req,
@@ -49,6 +50,20 @@ export class ChatController {
   ) {}
 
   /**
+   * Reject access to a chat owned by a different user. `id` is a client-chosen
+   * nanoid with no server-side authorization of its own, so every chat route
+   * must call this. Throws 404 (not 403) so the response can't be used to
+   * confirm that another user's chat id exists. A not-yet-created id or a
+   * legacy owner-less row is allowed through.
+   */
+  private async assertOwner(chatId: string, session: Session): Promise<void> {
+    const { ownerEmail } = await this.history.getOwnership(chatId)
+    if (ownerEmail !== null && ownerEmail !== session.username) {
+      throw new NotFoundException()
+    }
+  }
+
+  /**
    * POST /api/chat
    *
    * - "Send only the last message": frontend posts `{ id, message }`. We load
@@ -76,6 +91,15 @@ export class ChatController {
     if (!id) throw new BadRequestException('Missing chat `id`')
     if (!message) throw new BadRequestException('Missing `message`')
 
+    // SessionGuard has already attached the session for non-public routes.
+    const session = (req as Request & { session: Session }).session
+
+    // Ownership check FIRST (before the 409 concurrency probe, so we never
+    // reveal that someone else's chat id exists). Claim the chat for this user
+    // — creates the row on a brand-new id, adopts a legacy owner-less row.
+    await this.assertOwner(id, session)
+    if (session.username) await this.history.claimOwnership(id, session.username)
+
     // Guard concurrent sends to the same chat: an existing activeStreamId
     // means the previous generation is still in flight (or the server crashed
     // mid-stream and never cleared it — the client is expected to call
@@ -86,9 +110,6 @@ export class ChatController {
         'A previous response is still being generated for this chat.',
       )
     }
-
-    // SessionGuard has already attached the session for non-public routes.
-    const session = (req as Request & { session: Session }).session
 
     // Resolve the effective (jobTitle, department) tuple — applies the fallback
     // chain (user → default fallback → public-only) and triggers side effects
@@ -150,8 +171,12 @@ export class ChatController {
   @Get('chat/:id/stream')
   async resume(
     @Param('id') id: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    const session = (req as Request & { session: Session }).session
+    await this.assertOwner(id, session)
+
     const activeStreamId = await this.history.getActiveStreamId(id)
     if (!activeStreamId) {
       res.status(204).end()
@@ -219,6 +244,9 @@ export class ChatController {
     @Param('id') id: string,
     @Req() req: Request,
   ): Promise<{ success: true }> {
+    const session = (req as Request & { session: Session }).session
+    await this.assertOwner(id, session)
+
     const currentActive = await this.history.getActiveStreamId(id)
     if (!currentActive) {
       // Nothing to cancel — either never started or already finished.

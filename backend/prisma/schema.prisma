@@ -57,6 +57,13 @@ model Resource {
 
 model ChatHistory {
   id        String   @id
+  // Email (MSAL UPN) of the user who created this chat. Used to reject
+  // cross-user access to /api/chat/:id/* — the id is a client nanoid, so
+  // without this any authenticated user who learns another user's chat id
+  // could read/append/resume/stop their conversation. Nullable only for
+  // rows created before this column existed (adopted by their first
+  // authenticated accessor); every new chat is owned on first write.
+  ownerEmail String? @map("owner_email")
   // Stored as a JSON array of UIMessage. Validated against the AI SDK's
   // validateUIMessages on every load to make sure tool parts still match
   // the current tool set.

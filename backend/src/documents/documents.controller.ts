@@ -20,6 +20,7 @@ import 'multer'
 import type { Request, Response } from 'express'
 import type { Session } from '@prisma/client'
 import { AdminGuard } from '../auth/admin.guard.js'
+import { ViewerAccessService } from '../access/viewer-access.service.js'
 import { DocumentsService } from './documents.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import type { ImportRequest } from '../common/types.js'
@@ -38,18 +39,32 @@ export class DocumentsController {
   constructor(
     @Inject(DocumentsService) private readonly documents: DocumentsService,
     @Inject(SharepointService) private readonly sharepoint: SharepointService,
+    @Inject(ViewerAccessService) private readonly viewer: ViewerAccessService,
   ) {}
 
-  /** Any signed-in user. Results are job-profile filtered downstream. */
+  /**
+   * Any signed-in user. Results are filtered to the caller's job-profile
+   * allow-list (public/NULL-code docs plus whatever their profile grants) so
+   * the inventory never leaks the existence, titles, or SharePoint links of
+   * documents outside the caller's access scope.
+   */
   @Get('/')
-  async list() {
-    const documents = await this.documents.listDocuments()
+  async list(@Req() req: Request) {
+    const session = (req as Request & { session: Session }).session
+    const access = await this.viewer.resolve(session)
+    const documents = await this.documents.listDocuments({
+      viewer: access.publicOnly ? undefined : access.viewer,
+      publicOnly: access.publicOnly,
+    })
     return { documents }
   }
 
   @Post('upload')
   @UseGuards(AdminGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  // Cap the in-memory upload: multer's default memory storage buffers the whole
+  // file, so an unbounded upload can exhaust the process heap. 50 MB covers the
+  // largest real documents (scanned PDFs) with margin.
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024, files: 1 } }))
   async upload(@UploadedFile() file: Express.Multer.File | undefined, @Res() res: Response) {
     if (!file) {
       res.status(HttpStatus.BAD_REQUEST).json({ error: 'No file provided' })

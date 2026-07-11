@@ -46,6 +46,13 @@ export class AdminUsersController {
     @Param('email') email: string,
     @Body() body: PatchUserBody,
   ) {
+    // Runtime-validate the enum: the `'admin' | 'user'` type is erased at
+    // runtime, so without this a body like {"role":"superuser"} would be
+    // written verbatim and silently strip the target's admin access.
+    if (body.role !== undefined && body.role !== 'admin' && body.role !== 'user') {
+      throw new BadRequestException("role must be 'admin' or 'user'")
+    }
+
     const target = decodeURIComponent(email)
     const caller = (req as Request & { session: Session }).session.username ?? ''
     const isSelf = caller.toLocaleLowerCase() === target.toLocaleLowerCase()

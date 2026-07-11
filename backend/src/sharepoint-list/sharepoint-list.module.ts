@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { AccessModule } from '../access/access.module.js'
 import { AuthModule } from '../auth/auth.module.js'
 import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { DocumentsModule } from '../documents/documents.module.js'
@@ -11,7 +12,7 @@ import { SharepointListService } from './sharepoint-list.service.js'
 import { SyncController } from './sync.controller.js'
 
 @Module({
-  imports: [AuthModule, DocumentsModule],
+  imports: [AuthModule, DocumentsModule, AccessModule],
   controllers: [SyncController, DistributionListController],
   providers: [
     {

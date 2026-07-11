@@ -19,6 +19,39 @@ import { PrismaService } from '../prisma/prisma.service.js'
 export class ChatHistoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Ownership of a chat, for the cross-user access check in ChatController.
+   * `exists=false` → no row yet (a brand-new chat id, free to claim).
+   * `ownerEmail=null` → a legacy row from before ownership existed.
+   */
+  async getOwnership(chatId: string): Promise<{ exists: boolean; ownerEmail: string | null }> {
+    const row = await this.prisma.chatHistory.findUnique({
+      where: { id: chatId },
+      select: { ownerEmail: true },
+    })
+    return { exists: row !== null, ownerEmail: row?.ownerEmail ?? null }
+  }
+
+  /**
+   * Stamp the owner on a chat: create the row owned by `ownerEmail`, or adopt
+   * an existing owner-less (legacy) row for this caller. Never overwrites an
+   * owner that is already set — callers must have passed the getOwnership()
+   * check first. Called at the start of POST /api/chat.
+   */
+  async claimOwnership(chatId: string, ownerEmail: string): Promise<void> {
+    await this.prisma.chatHistory.upsert({
+      where: { id: chatId },
+      create: { id: chatId, ownerEmail },
+      update: {},
+    })
+    // Separate step so a legacy row (owner_email IS NULL) is adopted, while a
+    // row already owned by someone is left untouched.
+    await this.prisma.chatHistory.updateMany({
+      where: { id: chatId, ownerEmail: null },
+      data: { ownerEmail },
+    })
+  }
+
   /** Returns [] when no row exists yet (first message in a new chat). */
   async load(chatId: string): Promise<UIMessage[]> {
     const row = await this.prisma.chatHistory.findUnique({

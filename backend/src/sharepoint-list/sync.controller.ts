@@ -61,7 +61,15 @@ export class SyncController {
   }
 
   @Get('status')
-  async status() {
+  async status(@Req() req: Request) {
+    // Same gate as the trigger: sync status (per-list state, index totals,
+    // error strings) is operational metadata that only sync-permitted users
+    // should see, not every authenticated user.
+    const session = (req as Request & { session: Session }).session
+    if (!(await this.allowlist.isAllowed(session.username))) {
+      throw new ForbiddenException('This account is not permitted to view sync status')
+    }
+
     // All per-list WatcherState rows, newest first. Multi-list means one row
     // per known list; the UI can render them as a table.
     const states = await this.prisma.watcherState.findMany({ orderBy: { lastRunAt: 'desc' } })

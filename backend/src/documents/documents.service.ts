@@ -4,7 +4,7 @@ import { embedMany } from 'ai'
 import { type OpenAIProvider } from '@ai-sdk/openai'
 import { AppConfig } from '../config/app-config.service.js'
 import { buildOpenAIClient } from '../config/openai-client.js'
-import { EmbeddingsService } from '../embeddings/embeddings.service.js'
+import { EmbeddingsService, type ViewerProfile } from '../embeddings/embeddings.service.js'
 import { ParsersService } from './parsers.service.js'
 import { fileDateFromSourceMetadata } from './parse-file-date.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -130,8 +130,10 @@ export class DocumentsService {
     return { id: docId, filename, chunkCount, message: 'Document imported and indexed successfully' }
   }
 
-  async listDocuments(): Promise<DocumentInfo[]> {
-    return this.embeddings.listResourcesWithCounts()
+  async listDocuments(
+    opts: { viewer?: ViewerProfile; publicOnly?: boolean } = {},
+  ): Promise<DocumentInfo[]> {
+    return this.embeddings.listResourcesWithCounts(opts)
   }
 
   async removeDocument(docId: string): Promise<void> {

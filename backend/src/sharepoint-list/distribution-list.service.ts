@@ -1,6 +1,7 @@
 import type { DistributionList } from '@prisma/client'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma/prisma.service.js'
+import type { ViewerAccess } from '../access/viewer-access.service.js'
 import type { RegistryRow, ResolvedTargetList } from './sharepoint-list.service.js'
 
 /**
@@ -245,26 +246,56 @@ export class DistributionListService {
   }
 
   /** Listed by the API; used by the Sidebar's Layer 1 and the admin portal. */
-  async listAllForApi(): Promise<
-    {
-      id: string
-      displayName: string
-      note: string | null
-      listUrl: string
-      enabled: boolean
-      siteId: string | null
-      targetListId: string | null
-      createdByEmail: string | null
-      lastSyncedAt: Date | null
-      lastSyncStatus: string
-      lastSyncError: string | null
-      counters: { synced: number; pending: number; failed: number; removed: number }
-    }[]
-  > {
-    const rows = await this.prisma.distributionList.findMany({
-      orderBy: [{ lastSyncStatus: 'asc' }, { displayName: 'asc' }],
+  // ── Access scoping for the read (sidebar) API ────────────────────
+  //
+  // These list/item endpoints are reachable by any authenticated user, so the
+  // results must be filtered to the caller's job-profile allow-list — exactly
+  // like the RAG retrieval path — or they leak the existence, titles, codes,
+  // and SharePoint URLs of documents the caller can't access.
+
+  /** The sharepoint codes this viewer's profile is allowed to see. */
+  private async allowedCodes(access: ViewerAccess): Promise<string[]> {
+    // public-only viewers have no allow-list; distribution items always carry
+    // a sharepoint_code (never NULL/public), so they can see none of them.
+    if (access.publicOnly) return []
+    const rows = await this.prisma.jobProfileAccess.findMany({
+      where: { jobTitle: access.viewer.jobTitle, department: access.viewer.department },
+      select: { sharepointCode: true },
     })
-    return rows.map((r) => ({
+    return rows.map((r) => r.sharepointCode)
+  }
+
+  /**
+   * The set of distribution-list ids the viewer may see — a list is visible
+   * iff it contains at least one item whose code is in the viewer's allow-list.
+   * Empty set means "no access", so list/one/items all fail closed.
+   */
+  async accessibleListIds(access: ViewerAccess): Promise<Set<string>> {
+    const codes = await this.allowedCodes(access)
+    if (codes.length === 0) return new Set()
+    const rows = await this.prisma.distributionListItem.findMany({
+      where: { sharepointCode: { in: codes } },
+      select: { distributionListId: true },
+      distinct: ['distributionListId'],
+    })
+    return new Set(rows.map((r) => r.distributionListId))
+  }
+
+  private mapListRow(r: DistributionList): {
+    id: string
+    displayName: string
+    note: string | null
+    listUrl: string
+    enabled: boolean
+    siteId: string | null
+    targetListId: string | null
+    createdByEmail: string | null
+    lastSyncedAt: Date | null
+    lastSyncStatus: string
+    lastSyncError: string | null
+    counters: { synced: number; pending: number; failed: number; removed: number }
+  } {
+    return {
       id: r.id,
       displayName: r.displayName,
       note: r.note,
@@ -282,7 +313,26 @@ export class DistributionListService {
         failed: r.itemsFailed,
         removed: r.itemsRemoved,
       },
-    }))
+    }
+  }
+
+  /** ALL lists, unfiltered. Admin-only (`/api/admin/distribution-lists`). */
+  async listAllForApi() {
+    const rows = await this.prisma.distributionList.findMany({
+      orderBy: [{ lastSyncStatus: 'asc' }, { displayName: 'asc' }],
+    })
+    return rows.map((r) => this.mapListRow(r))
+  }
+
+  /** Only the lists the viewer's job profile can access. User-facing sidebar. */
+  async listAccessibleForApi(access: ViewerAccess) {
+    const visible = await this.accessibleListIds(access)
+    if (visible.size === 0) return []
+    const rows = await this.prisma.distributionList.findMany({
+      where: { id: { in: Array.from(visible) } },
+      orderBy: [{ lastSyncStatus: 'asc' }, { displayName: 'asc' }],
+    })
+    return rows.map((r) => this.mapListRow(r))
   }
 
   async getByIdForApi(id: string) {
@@ -353,11 +403,16 @@ export class DistributionListService {
 
   async listItemsForApi(
     distributionListId: string,
-    opts: { take?: number; cursor?: string } = {},
+    opts: { take?: number; cursor?: string; access: ViewerAccess },
   ) {
+    // Restrict to items the viewer's profile is allowed to see. Even though the
+    // caller has already been checked against accessibleListIds, filter here
+    // too so a list the viewer can partially see never exposes its other items.
+    const codes = await this.allowedCodes(opts.access)
+    if (codes.length === 0) return []
     const take = Math.min(Math.max(opts.take ?? 100, 1), 500)
     return this.prisma.distributionListItem.findMany({
-      where: { distributionListId },
+      where: { distributionListId, sharepointCode: { in: codes } },
       orderBy: { sharepointCode: 'asc' },
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
