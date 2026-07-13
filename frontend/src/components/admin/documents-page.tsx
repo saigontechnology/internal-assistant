@@ -160,7 +160,7 @@ export function AdminDocumentsPage() {
   const pendingCount = docs?.filter((d) => d.syncStatus !== "synced").length ?? 0
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col gap-6">
       <PageHeader
         eyebrow="Knowledge base"
         title="Documents"
@@ -228,9 +228,9 @@ export function AdminDocumentsPage() {
         </Panel>
       ) : (
         <>
-          <Panel className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-muted/40">
+          <Panel className="min-h-0 flex-1">
+            <Table containerClassName="h-full">
+              <TableHeader sticky className="bg-muted/40">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="pl-4">Document</TableHead>
                   <TableHead>Status</TableHead>
@@ -334,7 +334,7 @@ export function AdminDocumentsPage() {
           </Panel>
 
           {nextCursor && (
-            <div className="flex justify-center">
+            <div className="flex shrink-0 justify-center">
               <Button variant="outline" onClick={loadMore}>
                 Load more
               </Button>

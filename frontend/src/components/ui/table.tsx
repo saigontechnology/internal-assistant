@@ -2,11 +2,15 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-auto", containerClassName)}
     >
       <table
         data-slot="table"
@@ -17,11 +21,26 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   )
 }
 
-function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
+/**
+ * `sticky` pins the header to the top of the scroll container. The opaque
+ * `bg-card` is what rows scroll *under* (a page's own tint on top of it stays
+ * translucent), and the bottom rule is an inset shadow because a collapsed
+ * table border on a sticky cell drops out while scrolling in Chrome.
+ */
+function TableHeader({
+  className,
+  sticky,
+  ...props
+}: React.ComponentProps<"thead"> & { sticky?: boolean }) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn(
+        "[&_tr]:border-b",
+        sticky &&
+          "sticky top-0 z-10 bg-card [&_tr]:border-b-0 [&_th]:shadow-[inset_0_-1px_0_var(--border)]",
+        className
+      )}
       {...props}
     />
   )
