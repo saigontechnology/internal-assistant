@@ -22,6 +22,7 @@ export class AppConfig {
   }
   get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
   get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
+  get chatMaxSteps(): number { return this.raw.getOrThrow('CHAT_MAX_STEPS') }
 
   // ── Chat provider switch (OpenRouter ↔ Gemini ↔ OpenCode) ──
   get chatProvider(): 'openai' | 'gemini' | 'opencode' { return this.raw.getOrThrow('CHAT_PROVIDER') }

@@ -264,12 +264,20 @@ export class ChatService {
     // exact rung that streamed (not e.g. the primary when we were actually
     // running the second fallback).
     const { model, modelId, ladder } = await this.resolveChatModel()
+    const maxSteps = this.runtime.chatMaxSteps
     const result = streamText({
       model,
       system: buildSystemPrompt(opts.viewer),
       messages: modelMessages,
       tools: this.buildTools(opts),
-      stopWhen: stepCountIs(4),
+      stopWhen: stepCountIs(maxSteps),
+      // Take the tools away on the final step so the model has no choice but
+      // to write an answer from what it already retrieved. Without this, a turn
+      // that spends its whole budget on retrievals stops on a tool-call step and
+      // the assistant message carries zero text parts — the user sees the search
+      // cards and then nothing, and the empty turn gets persisted.
+      prepareStep: ({ stepNumber }) =>
+        stepNumber >= maxSteps - 1 ? { toolChoice: 'none' } : {},
       abortSignal: opts.abortSignal,
       onError: ({ error }) => this.handleStreamError(error, modelId, ladder),
     })

@@ -10,6 +10,11 @@ export const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
   CHAT_MODEL: z.string().default('deepseek/deepseek-v4-flash:free'),
   EMBEDDING_MODEL: z.string().default('nvidia/llama-nemotron-embed-vl-1b-v2:free'),
+  // Steps in one agent turn: each retrieval round-trip is a step, and the
+  // answer itself needs one. The last step runs with tools disabled, so the
+  // real retrieval budget is CHAT_MAX_STEPS - 1. Below 2 there is no room to
+  // both search and answer. Editable at /admin/settings.
+  CHAT_MAX_STEPS: z.coerce.number().int().min(2).max(12).default(6),
 
   // Chat provider switch. Only affects the chat/generation path; the
   // embedding pipeline stays on OpenRouter (via the OPENAI_*  vars)

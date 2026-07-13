@@ -128,6 +128,9 @@ export class RuntimeSettingsService implements OnModuleInit, OnModuleDestroy {
       this.raw('chat.gemini_second_fallback_model') ?? this.config.geminiChatSecondFallbackModel
     )
   }
+  get chatMaxSteps(): number {
+    return this.num('chat.max_steps') ?? this.config.chatMaxSteps
+  }
 
   get chunkSize(): number {
     return this.num('ingest.chunk_size') ?? this.config.chunkSize

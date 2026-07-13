@@ -98,6 +98,17 @@ export const SETTING_DEFS: SettingDef[] = [
     envVar: 'GEMINI_CHAT_SECOND_FALLBACK_MODEL',
     envDefault: (c) => c.geminiChatSecondFallbackModel,
   },
+  {
+    key: 'chat.max_steps',
+    group: 'chat',
+    label: 'Max steps per answer',
+    help: 'Each document search is one step and the written answer needs one more, so the search budget is this minus 1. Raise it if answers to hard questions feel under-researched; lower it to cut cost, since every step is a separate model request. Applies to all providers.',
+    kind: 'number',
+    envVar: 'CHAT_MAX_STEPS',
+    envDefault: (c) => String(c.chatMaxSteps),
+    min: 2,
+    max: 12,
+  },
 
   // ── Ingest ──
   {
