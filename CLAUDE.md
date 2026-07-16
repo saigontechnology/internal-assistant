@@ -27,7 +27,7 @@ There is **no test runner** and **no linter** wired in the backend yet. Rely on 
 - `npm run lint` — ESLint
 - `npm run preview` — serve the production build locally
 
-**Whole stack**: `./dev.sh` from the repo root launches a tmux session with 9router (`:20128`), backend, frontend, and a Claude pane. Requires `tmux` and starts the local Postgres via `docker-compose.yml` if not already running.
+**Whole stack**: `./dev.sh` from the repo root launches a tmux session with backend and frontend panes. Requires `tmux` and starts the local Postgres via `docker-compose.yml` if not already running.
 
 ## Architecture (big picture)
 
@@ -59,7 +59,7 @@ The **OpenCode ladder is admin-editable at runtime** and the env vars are only a
 
 **Model id trap**: OpenCode's catalog (`GET $OPENCODE_API_BASE/models`, servable unauthenticated) returns **bare** ids — `glm-5.2`, `kimi-k2.6`, `minimax-m3`. The **OpenCode Zen "Go" gateway (`/zen/go/v1`) also wants bare ids** — verified live: `glm-5.2` is accepted, while `opencode-go/glm-5.2` returns `ModelError: Model opencode-go/glm-5.2 is not supported`. So the default prefix is the empty string. The **prefix is still stored separately** from the model ids (for any future gateway that *does* namespace): `applyPrefix()` joins them at call time, catalog validation compares the *bare* id, and changing the prefix never invalidates the picked models. Never store a prefixed id in a ladder rung — it will fail catalog validation. (Earlier defaults wrongly prefixed all three rungs — first `zai/`, then `opencode-go/`; both made every chat request fail against the Go gateway.)
 
-**Historical naming trap**: `OPENAI_API_BASE` defaults to `https://openrouter.ai/api/v1` and `CHAT_MODEL` / `EMBEDDING_MODEL` are OpenRouter slugs. "OpenAI" in this repo has meant "OpenRouter" for a while. `OPENAI_HOST_OVERRIDE` is a workaround for a self-hosted 9router proxy that gates on the `Host` header — leave it unset in local dev.
+**Historical naming trap**: `OPENAI_API_BASE` defaults to `https://openrouter.ai/api/v1` and `CHAT_MODEL` / `EMBEDDING_MODEL` are OpenRouter slugs. "OpenAI" in this repo has meant "OpenRouter" for a while.
 
 ### Vector storage
 

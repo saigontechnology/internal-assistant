@@ -52,8 +52,8 @@ Open http://localhost:5173 — sign in with your Microsoft account and import do
 ### Run everything at once
 
 Once dependencies are installed and `.env` files are configured, start the whole
-stack — the 9router AI proxy (`:20128`), backend (`:8000`), frontend (`:5173`),
-and a Claude Code pane — in a tmux session with a single command from the repo root:
+stack — backend (`:8000`) and frontend (`:5173`) — in a tmux session with a
+single command from the repo root:
 
 ```bash
 ./dev.sh

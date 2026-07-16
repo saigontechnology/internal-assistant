@@ -15,11 +15,6 @@ export class AppConfig {
   // ── LLM ──
   get openaiApiBase() { return this.raw.getOrThrow('OPENAI_API_BASE') }
   get openaiApiKey()  { return this.raw.getOrThrow('OPENAI_API_KEY') }
-  /** Optional Host-header override. Undefined when the env var is unset/empty. */
-  get openaiHostOverride(): string | undefined {
-    const v = this.raw.get<string>('OPENAI_HOST_OVERRIDE')
-    return v && v.length ? v : undefined
-  }
   get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
   get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
   get chatMaxSteps(): number { return this.raw.getOrThrow('CHAT_MAX_STEPS') }

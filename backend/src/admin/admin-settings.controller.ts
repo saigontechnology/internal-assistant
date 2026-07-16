@@ -113,8 +113,6 @@ export class AdminSettingsController {
         return this.config.chatProvider
       case 'OPENAI_API_BASE':
         return this.config.openaiApiBase
-      case 'OPENAI_HOST_OVERRIDE':
-        return this.config.openaiHostOverride
       case 'OPENCODE_API_BASE':
         return this.config.opencodeApiBase
       case 'FRONTEND_URL':

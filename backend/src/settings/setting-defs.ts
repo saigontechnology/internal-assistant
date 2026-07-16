@@ -8,10 +8,9 @@ import { EMBEDDING_DIMENSION, type EmbeddingProbe } from '../embeddings/embeddin
  *
  * Deliberately absent, and why:
  *
- * - `CHAT_PROVIDER`, `OPENAI_API_BASE`, `OPENCODE_API_BASE`,
- *   `OPENAI_HOST_OVERRIDE` — consumed when ChatService builds its SDK clients
- *   in the constructor. An editable field that needs a restart to take effect
- *   is worse than no field.
+ * - `CHAT_PROVIDER`, `OPENAI_API_BASE`, `OPENCODE_API_BASE` — consumed when
+ *   ChatService builds its SDK clients in the constructor. An editable field
+ *   that needs a restart to take effect is worse than no field.
  * - The Postgres pool (`POSTGRES_POOL_MAX` and friends) and `PGVECTOR_EF_SEARCH`
  *   — same reason: they're applied when PrismaModule opens the pool, and
  *   `hnsw.ef_search` rides on the connection itself.
@@ -399,7 +398,6 @@ export const ENV_VIEW: { name: string; secret: boolean; note?: string }[] = [
   { name: 'NODE_ENV', secret: false },
   { name: 'CHAT_PROVIDER', secret: false, note: 'Selects the SDK client at boot. Restart to change.' },
   { name: 'OPENAI_API_BASE', secret: false },
-  { name: 'OPENAI_HOST_OVERRIDE', secret: false },
   { name: 'OPENCODE_API_BASE', secret: false },
   { name: 'FRONTEND_URL', secret: false },
   { name: 'AZURE_CLIENT_ID', secret: false },

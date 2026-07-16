@@ -6,10 +6,6 @@ import { AppConfig } from './app-config.service.js'
  * buildOpenAIClient, pointed at the OpenCode OpenAI-compatible endpoint.
  * Used only for the chat/generation path — embeddings stay on the
  * OpenRouter-backed OpenAI client. See docs/opencode-migration-plan.md.
- *
- * No Host-header override here — that's a workaround for the OpenAI-side
- * proxy (see env.schema.ts on OPENAI_HOST_OVERRIDE) and does not apply
- * when talking to opencode.ai directly.
  */
 export function buildOpencodeClient(config: AppConfig): OpenAIProvider {
   const apiKey = config.opencodeApiKey

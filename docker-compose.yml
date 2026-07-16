@@ -112,7 +112,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-docwise}
       OPENAI_API_BASE: ${OPENAI_API_BASE}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_HOST_OVERRIDE: ${OPENAI_HOST_OVERRIDE:-}
       CHAT_MODEL: ${CHAT_MODEL}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       CHUNK_SIZE: ${CHUNK_SIZE}
@@ -169,11 +168,6 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     volumes:
       - backend_data:/app/data
-    # Lets the container reach services listening on the VPS host's
-    # loopback (e.g. 9router on :20128, run via pm2). Inside the container,
-    # use `host.docker.internal:<port>` instead of `localhost:<port>`.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     # Deploys recreate this container. Docker sends SIGTERM, waits, then
     # SIGKILLs — so this has to exceed SHUTDOWN_DRAIN_TIMEOUT_MS or the drain is
     # cut short and users mid-answer lose it anyway. 25s drain + 10s slack.

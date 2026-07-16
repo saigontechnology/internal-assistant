@@ -2,10 +2,8 @@
 #
 # dev.sh — run the full Internal Assistant dev stack in a tmux session.
 #
-#   ┌─ ⬡ 9router :20128 ─────────────────────────┐  top, slim, full width
-#   ├─ ⚙ backend :8000 ───┬─ ▲ frontend :5173 ───┤  middle row
-#   ├─ ✦ claude ──────────┴──────────────────────┤  bottom, full width
-#   └────────────────────────────────────────────┘
+#   ┌─ ⚙ backend :8000 ───┬─ ▲ frontend :5173 ───┐
+#   └─────────────────────┴──────────────────────┘
 #
 # Labeled pane borders + violet status bar come from the project .tmux.conf.
 # Re-running this script attaches to the existing session.
@@ -68,23 +66,17 @@ ensure_postgres() {
 
 ensure_postgres
 
-# 9router (top, full width).
-tmux new-session -d -s "$SESSION" -c "$ROOT" -n dev
+# backend (left).
+tmux new-session -d -s "$SESSION" -c "$ROOT/backend" -n dev
 
 # Load the project tmux config (theme, mouse, pane titles, keybindings).
 tmux source-file "$ROOT/.tmux.conf"
 tmux bind r source-file "$ROOT/.tmux.conf" \; display "Internal Assistant tmux config reloaded"
-tmux select-pane -t "$SESSION" -T "⬡ 9router  :20128"
-tmux send-keys   -t "$SESSION" '9router' Enter
-
-# backend (middle-left) — fills the full-width lower region first (85%),
-# leaving 9router a small strip on top.
-svc=$(tmux split-window -P -F '#{pane_id}' -v -l 85% -t "$SESSION" -c "$ROOT/backend")
-tmux select-pane -t "$svc" -T "⚙ backend  :8000"
-tmux send-keys   -t "$svc" 'npm run dev' Enter
+tmux select-pane -t "$SESSION" -T "⚙ backend  :8000"
+tmux send-keys   -t "$SESSION" 'npm run dev' Enter
 
 # frontend (right of backend).
-fe=$(tmux split-window -P -F '#{pane_id}' -h -t "$svc" -c "$ROOT/frontend")
+fe=$(tmux split-window -P -F '#{pane_id}' -h -t "$SESSION" -c "$ROOT/frontend")
 tmux select-pane -t "$fe" -T "▲ frontend :5173"
 tmux send-keys   -t "$fe" 'npm run dev' Enter
 
