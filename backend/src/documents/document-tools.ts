@@ -2,8 +2,10 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import {
   EmbeddingsService,
+  type SimilarityHit,
   type ViewerProfile,
 } from '../embeddings/embeddings.service.js'
+import { RetrievalUnavailableError } from '../embeddings/retrieval-error.js'
 
 export interface DocumentToolsOptions {
   /**
@@ -72,11 +74,27 @@ export function buildDocumentTools(
         ),
     }),
     execute: async ({ query, filenames }) => {
-      const { hits, restrictedCount } = await embeddings.similaritySearch(query, {
-        filenames,
-        viewer: opts.viewer,
-        publicOnly: opts.publicOnly,
-      })
+      let hits: SimilarityHit[]
+      let restrictedCount: number
+      try {
+        const res = await embeddings.similaritySearch(query, {
+          filenames,
+          viewer: opts.viewer,
+          publicOnly: opts.publicOnly,
+        })
+        hits = res.hits
+        restrictedCount = res.restrictedCount
+      } catch (err) {
+        if (!(err instanceof RetrievalUnavailableError)) throw err
+        // Retrieval is DOWN, not empty. These are different facts and the old
+        // code collapsed them: the error was swallowed and the agent received
+        // "No matching documents found", which it dutifully relayed to the user
+        // as "your documents don't cover this". Under load — when the embedding
+        // provider is rate-limiting us — that turned an outage into a stream of
+        // confident wrong answers with no error anywhere to show for it.
+        console.error('[retrieve] retrieval unavailable:', err.message)
+        return `RETRIEVAL_UNAVAILABLE: The document search backend could not be reached for this query. Tell the user plainly that document search is temporarily unavailable and ask them to try again shortly. Do NOT answer the question from general knowledge, and do NOT claim their documents lack the information — you were unable to look.`
+      }
 
       // ACCESS_DENIED is the only signal the agent ever gets about restricted
       // documents — no filename, code, title, URL, or content. Naming them

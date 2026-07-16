@@ -164,6 +164,16 @@ export function AdminSettingsPage() {
                       </>
                     )}
                   </p>
+                  {/* Only shown once the field is actually dirty. A warning that
+                      is always on screen is a warning nobody reads; one that
+                      appears the moment you change the value is a warning about
+                      the change you are making. */}
+                  {s.danger && draft[s.key] !== s.value && (
+                    <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                      <span className="font-medium">Careful: </span>
+                      {s.danger}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

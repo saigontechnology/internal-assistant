@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
+import { RateLimitGuard } from '../common/rate-limit.guard.js'
 import { AppConfig } from '../config/app-config.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import { GraphMeService } from '../user-permission/graph-me.service.js'
 import { UserPermissionService } from '../user-permission/user-permission.service.js'
 import { AdminRoleService } from './admin-role.service.js'
@@ -86,6 +88,16 @@ import { SyncAllowlistService } from './sync-allowlist.service.js'
       inject: [PrismaService, AppConfig],
       useFactory: (p: PrismaService, c: AppConfig) => new AdminRoleService(p, c),
     },
+    {
+      provide: RateLimitGuard,
+      inject: [RuntimeSettingsService],
+      useFactory: (s: RuntimeSettingsService) => new RateLimitGuard(s),
+    },
+    // Registered ahead of SessionGuard, and order matters: global guards run in
+    // the order they appear here, and a request we're about to reject shouldn't
+    // first pay for a session lookup and an account-state read. Shedding load
+    // after doing the work would defeat the point.
+    { provide: APP_GUARD, useExisting: RateLimitGuard },
     {
       provide: SessionGuard,
       inject: [Reflector, SessionCookieService, SessionService, AdminRoleService],

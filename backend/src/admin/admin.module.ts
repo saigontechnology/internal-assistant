@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module.js'
 import { ChatModule } from '../chat/chat.module.js'
 import { AppConfig } from '../config/app-config.service.js'
 import { DocumentsModule } from '../documents/documents.module.js'
+import { EmbeddingsModule } from '../embeddings/embeddings.module.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { SharepointListModule } from '../sharepoint-list/sharepoint-list.module.js'
 import { AdminBootstrapService } from './admin-bootstrap.service.js'
@@ -22,7 +23,9 @@ import { AdminUsersService } from './admin-users.service.js'
  * of the app so DI works under tsx/esbuild.
  */
 @Module({
-  imports: [AuthModule, ChatModule, DocumentsModule, SharepointListModule],
+  // EmbeddingsModule is here for AdminSettingsController's dimension probe —
+  // the check that lets the embedding model be edited at all.
+  imports: [AuthModule, ChatModule, DocumentsModule, EmbeddingsModule, SharepointListModule],
   controllers: [
     AdminUsersController,
     AdminDocumentsController,

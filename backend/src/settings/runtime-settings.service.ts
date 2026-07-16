@@ -131,6 +131,60 @@ export class RuntimeSettingsService implements OnModuleInit, OnModuleDestroy {
   get chatMaxSteps(): number {
     return this.num('chat.max_steps') ?? this.config.chatMaxSteps
   }
+  get chatHistoryWindow(): number {
+    return this.num('chat.history_window') ?? this.config.chatHistoryWindow
+  }
+  get chatHistoryMaxPersisted(): number {
+    return this.num('chat.history_max_persisted') ?? this.config.chatHistoryMaxPersisted
+  }
+
+  // ── Retrieval ──
+
+  /**
+   * The model used for both document and query embeddings.
+   *
+   * Editable, unlike the rest of the pgvector-adjacent config, because the
+   * admin write path probes the candidate model's output dimension and refuses
+   * anything that isn't halfvec(2048)-shaped — see `retrieval.embedding_model`
+   * in setting-defs.ts. Without that field the only escape from a rate-limited
+   * free-tier embedding model was a redeploy.
+   */
+  get embeddingModel(): string {
+    return this.raw('retrieval.embedding_model') ?? this.config.embeddingModel
+  }
+  get retrievalTopK(): number {
+    return this.num('retrieval.top_k') ?? this.config.retrievalTopK
+  }
+  get retrievalMaxPerDoc(): number {
+    return this.num('retrieval.max_per_doc') ?? this.config.retrievalMaxPerDoc
+  }
+  /**
+   * Clamped to PGVECTOR_EF_SEARCH. The HNSW index will not return more
+   * candidates than its ef_search allows, so a pool above it is a lie: the
+   * admin form would report a number the database silently ignores.
+   */
+  get retrievalCandidatePool(): number {
+    const pool = this.num('retrieval.candidate_pool') ?? this.config.retrievalCandidatePool
+    return Math.min(pool, this.config.pgvectorEfSearch)
+  }
+
+  // ── Capacity & rate limits ──
+
+  get llmMaxRetries(): number {
+    return this.num('limits.llm_max_retries') ?? this.config.llmMaxRetries
+  }
+  get embeddingConcurrency(): number {
+    return this.num('limits.embedding_concurrency') ?? this.config.embeddingConcurrency
+  }
+  get chatConcurrency(): number {
+    return this.num('limits.chat_concurrency') ?? this.config.chatConcurrency
+  }
+  get rateLimitPerMinute(): number {
+    return this.num('limits.rate_limit_per_minute') ?? this.config.rateLimitPerMinute
+  }
+  get chatRateLimitPerMinute(): number {
+    return this.num('limits.chat_rate_limit_per_minute') ?? this.config.chatRateLimitPerMinute
+  }
 
   get chunkSize(): number {
     return this.num('ingest.chunk_size') ?? this.config.chunkSize

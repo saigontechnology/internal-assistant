@@ -13,6 +13,7 @@ import type { Request } from 'express'
 import type { Session } from '@prisma/client'
 import { AdminGuard } from '../auth/admin.guard.js'
 import { AppConfig } from '../config/app-config.service.js'
+import { EmbeddingsService } from '../embeddings/embeddings.service.js'
 import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 import {
   ENV_VIEW,
@@ -21,6 +22,7 @@ import {
   SETTING_DEFS,
   SETTING_DEFS_BY_KEY,
   SETTING_GROUPS,
+  type SettingValidationContext,
 } from '../settings/setting-defs.js'
 
 interface PutSettingsBody {
@@ -47,6 +49,9 @@ export class AdminSettingsController {
   constructor(
     @Inject(RuntimeSettingsService) private readonly settings: RuntimeSettingsService,
     @Inject(AppConfig) private readonly config: AppConfig,
+    // Only used to satisfy `validate` hooks — currently the embedding model's
+    // output-dimension probe, which is what makes that field safe to expose.
+    @Inject(EmbeddingsService) private readonly embeddings: EmbeddingsService,
   ) {}
 
   @Get('/')
@@ -65,6 +70,7 @@ export class AdminSettingsController {
         envVar: def.envVar,
         min: def.min ?? null,
         max: def.max ?? null,
+        danger: def.danger ?? null,
         value: row?.value ?? envDefault,
         source: row ? ('db' as const) : ('env' as const),
         envDefault,
@@ -105,8 +111,6 @@ export class AdminSettingsController {
         return this.config.isProd ? 'production' : 'development'
       case 'CHAT_PROVIDER':
         return this.config.chatProvider
-      case 'EMBEDDING_MODEL':
-        return this.config.embeddingModel
       case 'OPENAI_API_BASE':
         return this.config.openaiApiBase
       case 'OPENAI_HOST_OVERRIDE':
@@ -172,10 +176,42 @@ export class AdminSettingsController {
     if (entries.length === 0) throw new BadRequestException('No settings supplied')
 
     this.assertChunkingCoherent(Object.fromEntries(entries))
+    await this.runValidators(entries)
 
     const session = (req as Request & { session: Session }).session
     await this.settings.setMany(entries, session.username ?? null)
     return this.get()
+  }
+
+  /**
+   * Run the registry's async `validate` hooks — checks that need to ask
+   * something outside the process, so they can't be expressed as a type or a
+   * bound. Today that's the embedding model's output dimension, which is only
+   * knowable by embedding something and counting.
+   *
+   * Runs after the cheap synchronous validation and before any write, so a
+   * model that fails its probe never reaches `app_settings`. That ordering is
+   * the whole point: a wrong-dimension model doesn't fail at write time, it
+   * quietly poisons every document embedded after it.
+   *
+   * Only re-validates keys whose value actually changed. Saving the form with
+   * an untouched embedding model shouldn't cost a provider round-trip, and
+   * shouldn't fail because the provider happens to be rate-limiting right now.
+   */
+  private async runValidators(entries: [string, string][]): Promise<void> {
+    const ctx: SettingValidationContext = { embeddings: this.embeddings }
+
+    for (const [key, value] of entries) {
+      const def = SETTING_DEFS_BY_KEY.get(key)
+      if (!def?.validate) continue
+      if (value === this.settings.effective(key)) continue
+
+      try {
+        await def.validate(value, ctx)
+      } catch (err) {
+        throw new BadRequestException(`${def.label}: ${(err as Error).message}`)
+      }
+    }
   }
 
   /**

@@ -25,7 +25,16 @@ import { PrismaService } from './prisma.service.js'
           POSTGRES_PASSWORD: config.getOrThrow<string>('POSTGRES_PASSWORD'),
           POSTGRES_DB: config.getOrThrow<string>('POSTGRES_DB'),
         })
-        return new PrismaService(url)
+        // Read straight from ConfigService rather than AppConfig: this factory
+        // runs inside the global PrismaModule, which AppConfig itself sits
+        // above. The Zod schema has already applied the defaults.
+        return new PrismaService(url, {
+          max: config.getOrThrow<number>('POSTGRES_POOL_MAX'),
+          idleTimeoutMs: config.getOrThrow<number>('POSTGRES_POOL_IDLE_TIMEOUT_MS'),
+          connectionTimeoutMs: config.getOrThrow<number>('POSTGRES_POOL_CONNECTION_TIMEOUT_MS'),
+          statementTimeoutMs: config.getOrThrow<number>('POSTGRES_STATEMENT_TIMEOUT_MS'),
+          efSearch: config.getOrThrow<number>('PGVECTOR_EF_SEARCH'),
+        })
       },
     },
   ],

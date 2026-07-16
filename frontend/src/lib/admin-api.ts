@@ -261,7 +261,13 @@ export function applyPrefix(prefix: string, modelId: string): string {
 
 // ── Runtime settings ─────────────────────────────────────────────────
 
-export type SettingGroup = "chat" | "ingest" | "sharepoint" | "users"
+export type SettingGroup =
+  | "chat"
+  | "retrieval"
+  | "limits"
+  | "ingest"
+  | "sharepoint"
+  | "users"
 
 export interface SettingGroupInfo {
   group: SettingGroup
@@ -279,6 +285,12 @@ export interface RuntimeSetting {
   envVar: string
   min: number | null
   max: number | null
+  /**
+   * Set on settings whose blast radius exceeds the field — changing the
+   * embedding model invalidates every stored vector, lowering the persisted
+   * history cap deletes messages. Rendered as a warning beside the input.
+   */
+  danger: string | null
   value: string
   source: "db" | "env"
   envDefault: string

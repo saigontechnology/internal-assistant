@@ -2,6 +2,44 @@ services:
   postgres:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
+    # The image ships stock postgresql.conf: shared_buffers=128MB,
+    # max_connections=100. Both are wrong here.
+    #
+    # shared_buffers is the one that actually hurts. The HNSW index is the
+    # hottest structure in the system and every chat retrieval walks it; at
+    # 128MB it does not stay resident, so searches that should be served from
+    # memory go to disk instead. Size it at ~25% of the box's RAM (these values
+    # assume ~8GB — retune if the VPS differs) and set effective_cache_size to
+    # what the OS will plausibly cache on top.
+    #
+    # max_connections must clear POSTGRES_POOL_MAX (30) with room for
+    # migrations, psql, and Prisma Studio. 200 is generous; the pool is the
+    # thing that should be limiting concurrency, not the server.
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=6GB
+      - -c
+      - maintenance_work_mem=512MB
+      # Per sort/hash node, not per query — a query with several can use a
+      # multiple of this. Kept modest because max_connections is high.
+      - -c
+      - work_mem=16MB
+      # Postgres defaults assume spinning disks. On SSD/NVMe a random read costs
+      # barely more than a sequential one, and leaving this at 4.0 is a standard
+      # way to talk the planner out of an index scan it should have taken.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      # Log anything slow enough to be worth looking at. This is how you find
+      # out a vector search has stopped using the HNSW index.
+      - -c
+      - log_min_duration_statement=1000
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-docwise}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docwise}
@@ -15,10 +53,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # Without limits these four containers compete freely for the host, and the
+    # usual outcome is Postgres losing page cache to a Node process that has
+    # decided to parse a 40MB PDF. Reserve the database's share explicitly.
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Redis holds resumable chat streams, which are transient by nature: if one
+    # is evicted the client falls back to the persisted messages. So cap it and
+    # evict the oldest rather than letting it grow until the OOM killer picks a
+    # container to shoot — which, on memory pressure, would likely be Postgres.
+    command:
+      - redis-server
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
     volumes:
       - redis_data:/data
     ports:
@@ -28,6 +87,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 768M
 
   backend:
     build:
@@ -54,6 +117,35 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       CHUNK_SIZE: ${CHUNK_SIZE}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP}
+      # ── Connection pool + pgvector ──
+      # Read once, when the pool opens, so unlike the settings below these are
+      # env-only and need a restart. pg-pool's own default is 10, which
+      # saturates well under 100 concurrent users. Keep POSTGRES_POOL_MAX
+      # comfortably under postgres's max_connections (200, set above).
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-30}
+      POSTGRES_POOL_IDLE_TIMEOUT_MS: ${POSTGRES_POOL_IDLE_TIMEOUT_MS:-30000}
+      POSTGRES_POOL_CONNECTION_TIMEOUT_MS: ${POSTGRES_POOL_CONNECTION_TIMEOUT_MS:-10000}
+      POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-30000}
+      # HNSW candidate list. Caps the effective retrieval candidate pool — the
+      # admin-tunable `retrieval.candidate_pool` is clamped to this.
+      PGVECTOR_EF_SEARCH: ${PGVECTOR_EF_SEARCH:-120}
+      # ── Capacity, retrieval, rate limits ──
+      # All of these are admin-editable at /admin/settings; the values here are
+      # only the fallback used when no override row exists.
+      RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-8}
+      RETRIEVAL_MAX_PER_DOC: ${RETRIEVAL_MAX_PER_DOC:-3}
+      RETRIEVAL_CANDIDATE_POOL: ${RETRIEVAL_CANDIDATE_POOL:-60}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      EMBEDDING_CONCURRENCY: ${EMBEDDING_CONCURRENCY:-8}
+      CHAT_CONCURRENCY: ${CHAT_CONCURRENCY:-25}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      CHAT_RATE_LIMIT_PER_MINUTE: ${CHAT_RATE_LIMIT_PER_MINUTE:-20}
+      CHAT_HISTORY_WINDOW: ${CHAT_HISTORY_WINDOW:-20}
+      CHAT_HISTORY_MAX_PERSISTED: ${CHAT_HISTORY_MAX_PERSISTED:-200}
+      # How long SIGTERM waits for in-flight generations before aborting them.
+      # Must stay under compose's stop_grace_period below, or docker kills the
+      # process before the drain finishes and the wait was pointless.
+      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-25000}
       # Chat-provider switch. backend/.env is .dockerignore'd, so anything the
       # backend reads must be listed here — the container never sees that file.
       CHAT_PROVIDER: ${CHAT_PROVIDER:-openai}
@@ -82,6 +174,25 @@ services:
     # use `host.docker.internal:<port>` instead of `localhost:<port>`.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Deploys recreate this container. Docker sends SIGTERM, waits, then
+    # SIGKILLs — so this has to exceed SHUTDOWN_DRAIN_TIMEOUT_MS or the drain is
+    # cut short and users mid-answer lose it anyway. 25s drain + 10s slack.
+    stop_grace_period: 35s
+    healthcheck:
+      # /api/health is deliberately cheap and touches no database — a probe that
+      # used the pool would report the server dead exactly when the pool is
+      # saturated, and restart it at the worst possible moment.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # Migrations run on boot, so first-start can take a while. Failures during
+      # start_period don't count against `retries`.
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   frontend:
     build:
@@ -91,6 +202,10 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-5173}:80"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres_data:

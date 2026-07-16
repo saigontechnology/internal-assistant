@@ -52,6 +52,11 @@ model Resource {
 
   @@unique([sharepointListId, sharepointCode], name: "sp_code_uk", map: "resources_sp_code_uk")
   @@index([syncStatus], map: "resources_sync_status_idx")
+  // Both added in 0016. `filename` backs similaritySearch's `filenames` filter;
+  // `sharepointCode` backs the access-control predicate, which is evaluated for
+  // every candidate of every search.
+  @@index([filename], map: "resources_filename_idx")
+  @@index([sharepointCode], map: "resources_sharepoint_code_idx")
   @@map("resources")
 }
 
@@ -76,6 +81,14 @@ model ChatHistory {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
+  // Checked on every chat request (ChatController.assertOwner). Added in 0016.
+  @@index([ownerEmail], map: "chat_histories_owner_email_idx")
+  // 0016 also adds `chat_histories_active_stream_idx` on active_stream_id, as a
+  // PARTIAL index (WHERE active_stream_id IS NOT NULL) — nearly every row is
+  // NULL, so the partial form indexes only the handful of live streams. Prisma
+  // can't express a partial index, so it lives only in the migration. Don't
+  // "fix" the resulting drift by adding a full @@index here; that would index
+  // every chat ever created to find the three that are streaming.
   @@map("chat_histories")
 }
 

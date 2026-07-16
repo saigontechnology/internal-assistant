@@ -13,6 +13,7 @@ import { buildOpenAIClient } from '../config/openai-client.js'
 import { buildGoogleClient } from '../config/google-client.js'
 import { buildOpencodeClient } from '../config/opencode-client.js'
 import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
+import { Semaphore } from '../common/semaphore.js'
 import { ChatSettingsService } from './chat-settings.service.js'
 import {
   EmbeddingsService,
@@ -61,6 +62,10 @@ Tailor the answer to who is asking:
 - You MAY briefly mention who the next actor is ("your manager then reviews and approves") for context, but keep the actionable, step-by-step detail focused on the user's own responsibilities.
 - If the user explicitly asks about another role's steps (e.g. a manager asking how to approve), answer for that role instead. When their role is unknown or the process isn't role-specific, give the general process.
 
+When retrieval is unavailable:
+- If retrieveResources returns a result starting with \`RETRIEVAL_UNAVAILABLE:\`, the search backend could not be reached — you did NOT learn that the corpus lacks an answer, you learned nothing at all. These are different, and conflating them is how you end up confidently telling someone their documents don't cover a question they are documented on.
+- Say plainly that document search is temporarily unavailable and ask them to try again shortly. Do NOT answer from general knowledge, do NOT say "I couldn't find any documents", and do NOT retry the same query more than once — if it fails again, stop and report it.
+
 Access control:
 - If retrieveResources returns a result starting with \`ACCESS_DENIED:\`, the matching documents exist but the user is not permitted to read them. Respond clearly that they don't have permission to view the matching document(s) for this query, and suggest contacting an administrator if they need access. Do NOT speculate about the documents' contents, do NOT guess their names, do NOT call retrieveResources again with variations trying to bypass it, and do NOT mention any filename, code, title, or URL — none were returned to you.
 - If retrieveResources returns excerpts followed by \`ACCESS_DENIED_PARTIAL:\`, answer normally from the excerpts you DID receive, and append one short line at the end of your reply telling the user that additional matching documents exist that they don't have permission to view. Do NOT name the restricted documents.`
@@ -97,6 +102,31 @@ Who you're talking to:
 - Department: ${viewer.department}`
 }
 
+/**
+ * Keep the last `window` messages, without splitting a turn down the middle.
+ *
+ * The whole conversation is still persisted and still rendered — this only
+ * bounds what we re-send to the model each turn. It matters because of tool
+ * results: one retrieval round returns ~8 excerpts of roughly a kilobyte each,
+ * so by turn ten an untrimmed request is shipping hundreds of kilobytes of
+ * stale excerpts the model has already read. Input cost and time-to-first-token
+ * grow linearly with conversation length, and long chats eventually walk into
+ * the model's context limit and simply start failing.
+ *
+ * The window is advanced to start on a `user` message. Cutting mid-turn can
+ * leave a leading assistant message whose tool calls reference results that
+ * were trimmed away, which some providers reject outright.
+ */
+export function windowMessages(messages: UIMessage[], window: number): UIMessage[] {
+  if (messages.length <= window) return messages
+  let start = messages.length - window
+  while (start > 0 && messages[start]?.role !== 'user') start++
+  // Every message from `start` on is an assistant turn (no user message in the
+  // tail) — fall back to the untrimmed window rather than sending nothing.
+  if (start >= messages.length) return messages.slice(messages.length - window)
+  return messages.slice(start)
+}
+
 export class ChatService {
   private readonly openai: OpenAIProvider
   private readonly google: GoogleGenerativeAIProvider | null
@@ -108,6 +138,18 @@ export class ChatService {
    */
   private readonly cooldowns = new Map<string, number>()
 
+  /**
+   * Caps concurrent generations process-wide. Past the cap, turns queue instead
+   * of piling onto the provider — which would otherwise 429 the whole batch and
+   * push every user down the fallback ladder at once.
+   *
+   * This gates only the *start* of a stream. A generation holds its slot until
+   * streamText resolves, so the cap is on in-flight generations, not on
+   * requests. Sized well above the embedding cap, since a generation spends
+   * most of its life streaming tokens rather than embedding.
+   */
+  private readonly chatLimiter = new Semaphore(() => this.runtime.chatConcurrency)
+
   constructor(
     private readonly config: AppConfig,
     private readonly embeddings: EmbeddingsService,
@@ -117,6 +159,11 @@ export class ChatService {
     this.openai = buildOpenAIClient(this.config)
     this.google = this.config.chatProvider === 'gemini' ? buildGoogleClient(this.config) : null
     this.opencode = this.config.chatProvider === 'opencode' ? buildOpencodeClient(this.config) : null
+  }
+
+  /** Queue depth, for the /health capacity readout. */
+  get limiterStats(): { active: number; waiting: number } {
+    return { active: this.chatLimiter.active, waiting: this.chatLimiter.waiting }
   }
 
   /** The ordered Gemini ladder: primary → first fallback → second fallback. */
@@ -259,29 +306,61 @@ export class ChatService {
     result: StreamTextResult<any, never>
     originalMessages: UIMessage[]
   }> {
-    const modelMessages = await convertToModelMessages(messages)
+    // Only the tail is replayed to the model; `messages` (the full history) is
+    // what still gets persisted and returned to the client as originalMessages.
+    const sent = windowMessages(messages, this.runtime.chatHistoryWindow)
+    const modelMessages = await convertToModelMessages(sent)
+
     // Capture the resolved modelId so onError can attribute a 429 to the
     // exact rung that streamed (not e.g. the primary when we were actually
     // running the second fallback).
     const { model, modelId, ladder } = await this.resolveChatModel()
     const maxSteps = this.runtime.chatMaxSteps
-    const result = streamText({
-      model,
-      system: buildSystemPrompt(opts.viewer),
-      messages: modelMessages,
-      tools: this.buildTools(opts),
-      stopWhen: stepCountIs(maxSteps),
-      // Take the tools away on the final step so the model has no choice but
-      // to write an answer from what it already retrieved. Without this, a turn
-      // that spends its whole budget on retrievals stops on a tool-call step and
-      // the assistant message carries zero text parts — the user sees the search
-      // cards and then nothing, and the empty turn gets persisted.
-      prepareStep: ({ stepNumber }) =>
-        stepNumber >= maxSteps - 1 ? { toolChoice: 'none' } : {},
-      abortSignal: opts.abortSignal,
-      onError: ({ error }) => this.handleStreamError(error, modelId, ladder),
-    })
-    return { result, originalMessages: messages }
+
+    // Wait for a generation slot before starting the stream. `run()` is no use
+    // here — streamText returns the moment the stream *opens*, so the slot has
+    // to outlive this function and be released from the stream's own callbacks.
+    await this.chatLimiter.acquire()
+
+    // Exactly-once release. A leaked slot permanently shrinks capacity, and
+    // enough of them deadlock chat entirely, so every terminal path releases
+    // and the guard makes double-release harmless.
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      this.chatLimiter.release()
+    }
+
+    try {
+      const result = streamText({
+        model,
+        system: buildSystemPrompt(opts.viewer),
+        messages: modelMessages,
+        tools: this.buildTools(opts),
+        stopWhen: stepCountIs(maxSteps),
+        // Take the tools away on the final step so the model has no choice but
+        // to write an answer from what it already retrieved. Without this, a turn
+        // that spends its whole budget on retrievals stops on a tool-call step and
+        // the assistant message carries zero text parts — the user sees the search
+        // cards and then nothing, and the empty turn gets persisted.
+        prepareStep: ({ stepNumber }) =>
+          stepNumber >= maxSteps - 1 ? { toolChoice: 'none' } : {},
+        abortSignal: opts.abortSignal,
+        onFinish: release,
+        onAbort: release,
+        onError: ({ error }) => {
+          this.handleStreamError(error, modelId, ladder)
+          release()
+        },
+      })
+      return { result, originalMessages: messages }
+    } catch (err) {
+      // streamText threw synchronously (bad model id, client misconfigured) —
+      // no callback will ever fire, so this is the only place the slot gets back.
+      release()
+      throw err
+    }
   }
 }
 

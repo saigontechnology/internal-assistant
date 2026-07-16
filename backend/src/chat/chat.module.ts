@@ -34,8 +34,8 @@ import { ResumableStreamService } from './resumable-stream.service.js'
     },
     {
       provide: ChatHistoryService,
-      inject: [PrismaService],
-      useFactory: (p: PrismaService) => new ChatHistoryService(p),
+      inject: [PrismaService, RuntimeSettingsService],
+      useFactory: (p: PrismaService, s: RuntimeSettingsService) => new ChatHistoryService(p, s),
     },
     {
       provide: ResumableStreamService,
@@ -45,6 +45,7 @@ import { ResumableStreamService } from './resumable-stream.service.js'
     // Singleton in-process registry — one per Nest instance. No deps.
     { provide: ActiveStreamRegistry, useFactory: () => new ActiveStreamRegistry() },
   ],
-  exports: [ChatService, ChatHistoryService, ChatSettingsService],
+  // ActiveStreamRegistry is exported for the /health capacity readout.
+  exports: [ChatService, ChatHistoryService, ChatSettingsService, ActiveStreamRegistry],
 })
 export class ChatModule {}

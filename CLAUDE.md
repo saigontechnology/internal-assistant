@@ -63,9 +63,25 @@ The **OpenCode ladder is admin-editable at runtime** and the env vars are only a
 
 ### Vector storage
 
-`Resource` → many `Embedding` (Prisma, `ON DELETE CASCADE`). `Embedding.embedding` is declared `Unsupported("halfvec(2048)")` — the HNSW index (`embeddings_hnsw_idx`, `halfvec_cosine_ops`) lives in a hand-written migration (`migrations/20260609000001_pgvector_hnsw/`) because Prisma migrate can't express `USING hnsw (col halfvec_cosine_ops)`. If you touch the embedding column or index, edit that hand-written migration; don't let `prisma migrate` regenerate it.
+`Resource` → many `Embedding` (Prisma, `ON DELETE CASCADE`). `Embedding.embedding` is declared `Unsupported("halfvec(2048)")` — the HNSW index (`embeddings_hnsw_idx`, `halfvec_cosine_ops`) lives in a hand-written migration (`migrations/0001_pgvector_hnsw/`) because Prisma migrate can't express `USING hnsw (col halfvec_cosine_ops)`. If you touch the embedding column or index, edit that hand-written migration; don't let `prisma migrate` regenerate it.
 
-Vector dimension is `2048` because the current embedding model (`nvidia/llama-nemotron-embed-vl-1b-v2:free` on OpenRouter) outputs 2048-dim vectors. Changing the embedding model to one with a different dimension requires a corpus re-embed AND changing the column type + rebuilding the HNSW index.
+Vector dimension is `2048` (`EMBEDDING_DIMENSION` in `embeddings/embedding-probe.ts`). The embedding model **is** admin-editable (`/admin/settings` → Retrieval), but only because the write path probes the candidate model and rejects anything that doesn't return exactly 2048 dimensions — a wrong-width model doesn't error on write, it writes vectors from a foreign embedding space into the same column and corrupts retrieval silently. `addDocument` re-checks the width before inserting, as a backstop against a hand-edited `app_settings` row. Switching to a *different* 2048-dim model is still a corpus-wide re-embed; the form warns about that.
+
+### Retrieval query (`EmbeddingsService.similaritySearch`)
+
+Two things are load-bearing and easy to undo by accident:
+
+- **One HNSW scan per search, not two.** The `restrictedCount` (how many matching docs the viewer may not read) is computed from the *same* `cand` candidate pool as the hits, via a `FILTER (WHERE NOT allowed)` aggregate. It used to be a second, independent HNSW scan, which doubled the cost of the most expensive operation in the system on every retrieval.
+- **The access filter is applied *outside* the vector scan, deliberately.** Inside it, the planner is free to decide the filter is selective and abandon the HNSW index for a sequential scan that computes a distance for every row — the standard pgvector filtering trap, and one you only fall into once the corpus is large enough to hurt. The cost of scanning-then-filtering is recall for narrowly-permissioned viewers, which is what `retrieval.candidate_pool` (admin-editable) and `PGVECTOR_EF_SEARCH` (env, applied as a connection startup option) exist to buy back. The pool is clamped to `ef_search` — raising it above that does nothing, because the index won't return more candidates than `ef_search` allows.
+
+### Capacity (the 100-CCU work)
+
+- **Pool size.** `POSTGRES_POOL_MAX` (default 30). `pg-pool`'s own default is 10, which saturates well under 100 concurrent users — one chat turn costs ~a dozen light queries plus a vector scan per retrieval, so every request ends up queueing behind someone else's search. Env-only: read once, when `PrismaModule` opens the pool. Keep it under Postgres's `max_connections` (docker-compose sets 200).
+- **Provider failures are not silent.** `similaritySearch` throws `RetrievalUnavailableError` rather than returning zero hits. This matters more than it looks: the old code swallowed the error, the agent received "No matching documents found", and told the user their documents didn't cover the question. Under load that turned a rate-limit into a stream of confident wrong answers with nothing in the logs. `document-tools.ts` maps it to a `RETRIEVAL_UNAVAILABLE:` sentinel the system prompt knows how to report. **Do not restore the catch-and-return-empty.**
+- **Outbound calls are retried and capped.** `common/retry.ts` (jittered backoff on 429/5xx) and `common/semaphore.ts` (in-flight caps, read per-acquire so admin changes take effect live). `ChatService` holds its semaphore slot across the *whole stream* — `run()` won't do, because `streamText` returns as soon as the stream opens — and releases it from `onFinish`/`onAbort`/`onError` behind a once-guard. A leaked slot permanently shrinks capacity.
+- **History is windowed, not replayed whole.** `chat.history_window` bounds what goes to the model each turn; the full conversation is still persisted and still rendered. Retrieved excerpts live in the history, so replaying all of it makes cost and time-to-first-token grow linearly with conversation length.
+- **Rate limiting** is `common/rate-limit.guard.ts`, registered as an `APP_GUARD` *before* `SessionGuard` — a request being shed shouldn't first pay for a session lookup. In-memory, so per-process; it would need Redis before scaling out.
+- **`/api/health`** reports semaphore queue depths. That's how you tell whether a slow app is queued on generations, on embeddings, or on something else.
 
 ### Frontend
 
@@ -95,7 +111,13 @@ Two other invariants worth knowing:
 
 `GET /api/documents` is now authenticated (was `@Public()`); `POST /api/documents/upload` and `DELETE /api/documents/:id` are admin-only.
 
-**Runtime settings** (`/admin/settings`, `SETTING_DEFS` in `settings/setting-defs.ts`). Adding a setting means adding one registry entry plus one getter on `RuntimeSettingsService` — the controller and the form are generic. Three classes of var deliberately stay env-only, and the registry's doc comment says why: `EMBEDDING_MODEL` (a different output dimension silently corrupts the `halfvec(2048)` column rather than erroring), anything read in a constructor (`CHAT_PROVIDER` and the API base URLs — ChatService builds its SDK clients once), and every secret. The read-only "Environment" panel resolves non-secrets through `AppConfig` rather than `process.env`, because Zod's defaults are never written back to `process.env`; secrets are masked server-side and `REDIS_URL`'s userinfo is stripped.
+**Runtime settings** (`/admin/settings`, `SETTING_DEFS` in `settings/setting-defs.ts`). Adding a setting means adding one registry entry plus one getter on `RuntimeSettingsService` — the controller and the form are generic. A def may also carry an async `validate` hook (for checks that must ask something outside the process — currently the embedding model's dimension probe) and a `danger` string (rendered as a warning once the field is dirty). Validators run after cheap bounds-checking and before any write, and only for keys whose value actually changed.
+
+Two classes of var deliberately stay env-only, and the registry's doc comment says why: anything read in a constructor (`CHAT_PROVIDER` and the API base URLs — ChatService builds its SDK clients once; the Postgres pool and `PGVECTOR_EF_SEARCH` — applied when the pool opens), and every secret. `EMBEDDING_MODEL` used to be on that list and no longer is — see "Vector storage" above for what makes it safe.
+
+The read-only "Environment" panel resolves non-secrets through `AppConfig` rather than `process.env`, because Zod's defaults are never written back to `process.env`; secrets are masked server-side and `REDIS_URL`'s userinfo is stripped.
+
+**Env vars with a lower bound must go through `boundedInt()`** in `env.schema.ts`. The deploy workflow renders `.env` from GitHub repo variables, and an *unset* variable interpolates as the empty string — which `z.coerce.number()` turns into `0`, failing a `min(1)` bound and taking the whole boot down. `boundedInt` maps `''` back to `undefined` so the default applies.
 
 ### Auth model
 

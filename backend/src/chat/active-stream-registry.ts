@@ -31,4 +31,22 @@ export class ActiveStreamRegistry {
     this.controllers.delete(streamId)
     return true
   }
+
+  /** In-flight generations on this instance. Drives the shutdown drain. */
+  get size(): number {
+    return this.controllers.size
+  }
+
+  /**
+   * Cancel everything still running. Called at the end of the shutdown drain,
+   * for streams that didn't finish inside the grace period — better a clean
+   * abort (which persists the partial answer) than a killed process that
+   * leaves `active_stream_id` set and the chat wedged behind the 409 guard.
+   */
+  abortAll(): number {
+    const n = this.controllers.size
+    for (const controller of this.controllers.values()) controller.abort()
+    this.controllers.clear()
+    return n
+  }
 }

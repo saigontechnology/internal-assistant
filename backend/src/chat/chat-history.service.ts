@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai'
 import { PrismaService } from '../prisma/prisma.service.js'
+import { RuntimeSettingsService } from '../settings/runtime-settings.service.js'
 
 /**
  * Per-chat-id persistence for UIMessage arrays and the currently-active
@@ -17,7 +18,31 @@ import { PrismaService } from '../prisma/prisma.service.js'
  * finishes (or is explicitly stopped).
  */
 export class ChatHistoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: RuntimeSettingsService,
+  ) {}
+
+  /**
+   * Bound the stored blob before it goes back to Postgres.
+   *
+   * `messages` is a single JSON column that is read *and rewritten in full* on
+   * every turn, and each turn's tool results add roughly 25KB of retrieved
+   * excerpts to it. Left alone it grows without limit, so every subsequent turn
+   * in that chat pays to re-read and re-write a larger blob — and the cost is
+   * borne by the pool that every other user's request is queued behind.
+   *
+   * Oldest messages are dropped first, and the cut is advanced to a `user`
+   * message so a reloaded conversation never opens mid-turn.
+   */
+  private trim(messages: UIMessage[]): UIMessage[] {
+    const cap = this.settings.chatHistoryMaxPersisted
+    if (messages.length <= cap) return messages
+    let start = messages.length - cap
+    while (start < messages.length && messages[start]?.role !== 'user') start++
+    if (start >= messages.length) return messages.slice(messages.length - cap)
+    return messages.slice(start)
+  }
 
   /**
    * Ownership of a chat, for the cross-user access check in ChatController.
@@ -85,10 +110,11 @@ export class ChatHistoryService {
 
   /** Upsert: creates the row on first save, replaces messages on every subsequent finish. */
   async save(chatId: string, messages: UIMessage[]): Promise<void> {
+    const trimmed = this.trim(messages)
     await this.prisma.chatHistory.upsert({
       where: { id: chatId },
-      create: { id: chatId, messages: messages as object },
-      update: { messages: messages as object },
+      create: { id: chatId, messages: trimmed as object },
+      update: { messages: trimmed as object },
     })
   }
 
@@ -104,6 +130,7 @@ export class ChatHistoryService {
     messages: UIMessage[],
     expectedStreamId: string,
   ): Promise<void> {
+    const trimmed = this.trim(messages)
     await this.prisma.$transaction(async (tx) => {
       const row = await tx.chatHistory.findUnique({
         where: { id: chatId },
@@ -114,11 +141,11 @@ export class ChatHistoryService {
         where: { id: chatId },
         create: {
           id: chatId,
-          messages: messages as object,
+          messages: trimmed as object,
           activeStreamId: null,
         },
         update: {
-          messages: messages as object,
+          messages: trimmed as object,
           ...(shouldClear ? { activeStreamId: null } : {}),
         },
       })

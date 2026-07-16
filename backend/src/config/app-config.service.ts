@@ -23,6 +23,25 @@ export class AppConfig {
   get chatModel()     { return this.raw.getOrThrow('CHAT_MODEL') }
   get embeddingModel(){ return this.raw.getOrThrow('EMBEDDING_MODEL') }
   get chatMaxSteps(): number { return this.raw.getOrThrow('CHAT_MAX_STEPS') }
+  get chatHistoryWindow(): number { return this.raw.getOrThrow('CHAT_HISTORY_WINDOW') }
+  get chatHistoryMaxPersisted(): number { return this.raw.getOrThrow('CHAT_HISTORY_MAX_PERSISTED') }
+
+  // ── Retrieval ──
+  get retrievalTopK(): number         { return this.raw.getOrThrow('RETRIEVAL_TOP_K') }
+  get retrievalMaxPerDoc(): number    { return this.raw.getOrThrow('RETRIEVAL_MAX_PER_DOC') }
+  get retrievalCandidatePool(): number { return this.raw.getOrThrow('RETRIEVAL_CANDIDATE_POOL') }
+
+  // ── Outbound provider limits ──
+  get llmMaxRetries(): number        { return this.raw.getOrThrow('LLM_MAX_RETRIES') }
+  get embeddingConcurrency(): number { return this.raw.getOrThrow('EMBEDDING_CONCURRENCY') }
+  get chatConcurrency(): number      { return this.raw.getOrThrow('CHAT_CONCURRENCY') }
+
+  // ── Rate limiting ──
+  get rateLimitPerMinute(): number     { return this.raw.getOrThrow('RATE_LIMIT_PER_MINUTE') }
+  get chatRateLimitPerMinute(): number { return this.raw.getOrThrow('CHAT_RATE_LIMIT_PER_MINUTE') }
+
+  /** How long SIGTERM waits for in-flight chat streams before aborting them. */
+  get shutdownDrainTimeoutMs(): number { return this.raw.getOrThrow('SHUTDOWN_DRAIN_TIMEOUT_MS') }
 
   // ── Chat provider switch (OpenRouter ↔ Gemini ↔ OpenCode) ──
   get chatProvider(): 'openai' | 'gemini' | 'opencode' { return this.raw.getOrThrow('CHAT_PROVIDER') }
@@ -56,6 +75,11 @@ export class AppConfig {
       POSTGRES_DB: this.raw.getOrThrow('POSTGRES_DB'),
     })
   }
+  get poolMax(): number                 { return this.raw.getOrThrow('POSTGRES_POOL_MAX') }
+  get poolIdleTimeoutMs(): number       { return this.raw.getOrThrow('POSTGRES_POOL_IDLE_TIMEOUT_MS') }
+  get poolConnectionTimeoutMs(): number { return this.raw.getOrThrow('POSTGRES_POOL_CONNECTION_TIMEOUT_MS') }
+  get statementTimeoutMs(): number      { return this.raw.getOrThrow('POSTGRES_STATEMENT_TIMEOUT_MS') }
+  get pgvectorEfSearch(): number        { return this.raw.getOrThrow('PGVECTOR_EF_SEARCH') }
 
   // ── Azure / MSAL ──
   get azureClientId()     { return this.raw.getOrThrow('AZURE_CLIENT_ID') }
