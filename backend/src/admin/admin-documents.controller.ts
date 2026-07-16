@@ -129,12 +129,26 @@ export class AdminDocumentsController {
 
   /**
    * Force the next sync to re-download this file. Clearing `sharepointVersion`
-   * defeats the watcher's warm-path skip (which compares stored vs. list Ver).
+   * defeats the watcher's warm-path skip (which compares stored vs. list Ver);
+   * for pasted-link documents the equivalent is clearing the stored eTag,
+   * which defeats the refresh pass's change check.
    */
   @Post(':id/resync')
   async resyncOne(@Param('id') id: string) {
     const resource = await this.prisma.resource.findUnique({ where: { id } })
     if (!resource) throw new BadRequestException('Document not found')
+    if (resource.source === 'manual-link') {
+      const md = (resource.sourceMetadata ?? {}) as Record<string, unknown>
+      await this.prisma.resource.update({
+        where: { id },
+        data: {
+          sourceMetadata: { ...md, eTag: '' } as object,
+          syncStatus: 'pending_access',
+          syncError: null,
+        },
+      })
+      return { message: 'Marked for re-download on the next sync', id }
+    }
     if (!resource.sharepointListId) {
       throw new BadRequestException('Only SharePoint-sourced documents can be re-synced')
     }

@@ -48,6 +48,8 @@ export interface SyncRunSummary {
     failed: number
   }
   lists: PerListSummary[]
+  /** Refresh pass over pasted-link (manual-link) documents; absent if the run failed before reaching it. */
+  manualLinks?: { checked: number; refreshed: number; failed: number }
   fatalError?: string
 }
 
@@ -93,6 +95,7 @@ export class ListWatcherService {
     let listCount = 0
     let resolvedCount = 0
     let unresolvedCount = 0
+    let manualLinks: SyncRunSummary['manualLinks']
     let fatalError: string | undefined
 
     try {
@@ -156,6 +159,11 @@ export class ListWatcherService {
       // its resources would silently drop them out of chat retrieval.
       const liveTargetIds = await this.distributionLists.liveTargetListIds()
       await this.documents.demoteOrphanedSharepointRows(liveTargetIds)
+
+      // Pasted-link documents ride along on every sync run: eTag-probe each
+      // one and re-ingest only the ones that changed upstream. Failures keep
+      // the existing content (see DocumentsService.refreshManualLinks).
+      manualLinks = await this.documents.refreshManualLinks(tokens)
     } catch (err) {
       fatalError = (err as Error).message
     } finally {
@@ -186,7 +194,11 @@ export class ListWatcherService {
       status = 'error'
     } else if (perList.length > 0 && perList.every((s) => s.status === 'error')) {
       status = 'error'
-    } else if (perList.some((s) => s.status !== 'ok') || unresolvedCount > 0) {
+    } else if (
+      perList.some((s) => s.status !== 'ok') ||
+      unresolvedCount > 0 ||
+      (manualLinks?.failed ?? 0) > 0
+    ) {
       status = 'partial'
     } else {
       status = 'ok'
@@ -195,7 +207,7 @@ export class ListWatcherService {
     const summary: SyncRunSummary = {
       triggeredBy, startedAt, finishedAt,
       durationMs: finishedAt.getTime() - startedAt.getTime(),
-      status, totals, lists: perList, fatalError,
+      status, totals, lists: perList, manualLinks, fatalError,
     }
     this.lastRun = summary
     return summary

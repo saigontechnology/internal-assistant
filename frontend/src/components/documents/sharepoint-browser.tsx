@@ -9,7 +9,9 @@ import {
   CircleNotch,
   CaretLeft,
   CaretRight,
+  LinkSimple,
   MagnifyingGlass,
+  WarningCircle,
   X,
 } from "@phosphor-icons/react"
 import {
@@ -18,6 +20,7 @@ import {
   fetchSharePointFiles,
   fetchSharePointSearch,
   importDocuments,
+  importDocumentLinks,
   type SharePointSite,
   type SharePointDrive,
   type SharePointFile,
@@ -27,6 +30,15 @@ import { useAppView } from "@/lib/app-view"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type Step = "search" | "sites" | "drives" | "files"
 type Crumb = { id: string; name: string }
@@ -56,6 +68,7 @@ export function SharePointBrowser() {
   const [folderStack, setFolderStack] = useState<Crumb[]>([])
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [showAddLinks, setShowAddLinks] = useState(false)
 
   const runSearch = useCallback(async (query: string, from: number) => {
     setError(null)
@@ -258,15 +271,31 @@ export function SharePointBrowser() {
         <Cloud className="size-5 text-primary" />
         <h2 className="text-base font-semibold">Browse SharePoint</h2>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           className="ml-auto gap-1.5"
+          onClick={() => setShowAddLinks(true)}
+        >
+          <LinkSimple className="size-4" />
+          Add by links
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5"
           onClick={() => setView("chat")}
         >
           <X className="size-4" />
           Back to chat
         </Button>
       </div>
+
+      {showAddLinks && (
+        <AddByLinksDialog
+          onClose={() => setShowAddLinks(false)}
+          onImported={refreshDocuments}
+        />
+      )}
 
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 overflow-hidden px-6 py-6">
         {step === "search" ? (
@@ -415,6 +444,113 @@ export function SharePointBrowser() {
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
     </div>
+  )
+}
+
+// Matches MAX_LINKS_PER_REQUEST on the backend.
+const MAX_LINKS = 20
+
+function AddByLinksDialog({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void
+  onImported: () => void
+}) {
+  const [text, setText] = useState("")
+  const [importing, setImporting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [result, setResult] = useState<{
+    imported: { id: string; filename: string; chunkCount: number; message: string }[]
+    errors: { file: string; error: string }[]
+  } | null>(null)
+
+  const links = [...new Set(text.split("\n").map((l) => l.trim()).filter(Boolean))]
+  const tooMany = links.length > MAX_LINKS
+
+  const runImport = async () => {
+    setImporting(true)
+    setFormError(null)
+    setResult(null)
+    try {
+      const res = await importDocumentLinks(links)
+      setResult(res)
+      if (res.imported.length > 0) onImported()
+      // Keep only the failed links in the box so they can be fixed and retried.
+      setText(res.errors.map((e) => e.file).join("\n"))
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Import failed")
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add documents by link</DialogTitle>
+          <DialogDescription>
+            Paste SharePoint file links, one per line. Files are imported with
+            your access, become readable by everyone, and are refreshed on
+            every sync.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            placeholder={"https://contoso.sharepoint.com/sites/QA/Shared Documents/manual.pdf\nhttps://…"}
+          />
+
+          {tooMany && (
+            <p className="text-sm text-destructive">
+              At most {MAX_LINKS} links at a time.
+            </p>
+          )}
+
+          {result && (
+            <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              {result.imported.map((r) => (
+                <p key={r.id} className="flex items-start gap-2 text-muted-foreground">
+                  <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <span className="min-w-0 truncate">
+                    {r.filename} — {r.message}
+                  </span>
+                </p>
+              ))}
+              {result.errors.map((e) => (
+                <p key={e.file} className="flex items-start gap-2 text-destructive">
+                  <WarningCircle className="mt-0.5 size-4 shrink-0" />
+                  <span className="min-w-0 break-all">
+                    {e.file}: {e.error}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
+
+          {formError && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              <WarningCircle className="mt-0.5 size-4 shrink-0" />
+              {formError}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={importing}>
+            {result ? "Close" : "Cancel"}
+          </Button>
+          <Button disabled={importing || links.length === 0 || tooMany} onClick={runImport}>
+            {importing && <CircleNotch className="animate-spin" data-icon="inline-start" />}
+            Import{links.length > 0 ? ` ${links.length} link${links.length !== 1 ? "s" : ""}` : " links"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

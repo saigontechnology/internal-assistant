@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
-import { CaretLeft, CaretRight, CircleNotch, WarningCircle, CheckCircle, Clock } from "@phosphor-icons/react"
+import { CaretLeft, CaretRight, CircleNotch, FileText, WarningCircle, CheckCircle, Clock } from "@phosphor-icons/react"
 import {
   fetchDistributionLists,
   fetchDistributionListItems,
+  fetchDocuments,
   type DistributionListSummary,
   type DistributionListItem,
+  type DocumentInfo,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import {
@@ -23,6 +25,7 @@ import {
  */
 export function DistributionListsView({ refreshKey }: { refreshKey: number }) {
   const [lists, setLists] = useState<DistributionListSummary[] | null>(null)
+  const [manualDocs, setManualDocs] = useState<DocumentInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -31,8 +34,15 @@ export function DistributionListsView({ refreshKey }: { refreshKey: number }) {
     setIsLoading(true)
     setError(null)
     try {
-      const data = await fetchDistributionLists()
+      // Pasted-link docs belong to no distribution list, so they'd be
+      // invisible in this list-centric view; fetch them alongside. A failure
+      // there just leaves the section empty rather than erroring the tab.
+      const [data, docs] = await Promise.all([
+        fetchDistributionLists(),
+        fetchDocuments().catch(() => [] as DocumentInfo[]),
+      ])
       setLists(data)
+      setManualDocs(docs.filter((d) => d.source === "manual-link"))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load lists")
     } finally {
@@ -65,24 +75,67 @@ export function DistributionListsView({ refreshKey }: { refreshKey: number }) {
         </div>
       ) : error ? (
         <p className="px-4 py-6 text-center text-xs text-destructive">{error}</p>
-      ) : !lists || lists.length === 0 ? (
-        <p className="px-4 py-6 text-center text-xs text-sidebar-foreground/60">
-          No distribution lists yet. Run a sync to discover them.
-        </p>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <ul className="flex flex-col">
-            {lists.map((l) => (
-              <li key={l.id}>
-                <DistributionListRow
-                  list={l}
-                  onClick={() => setSelectedId(l.id)}
-                />
-              </li>
-            ))}
-          </ul>
+          {!lists || lists.length === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-sidebar-foreground/60">
+              No distribution lists yet. Run a sync to discover them.
+            </p>
+          ) : (
+            <ul className="flex flex-col">
+              {lists.map((l) => (
+                <li key={l.id}>
+                  <DistributionListRow
+                    list={l}
+                    onClick={() => setSelectedId(l.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {manualDocs.length > 0 && (
+            <>
+              <div className="border-b border-sidebar-border px-4 py-2.5">
+                <h3 className="label-eyebrow text-sidebar-foreground/60">
+                  Pasted documents
+                </h3>
+              </div>
+              <ul className="flex flex-col">
+                {manualDocs.map((d) => (
+                  <li key={d.id}>
+                    <ManualDocRow doc={d} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** One pasted-link document — visible to everyone, synced by the watcher. */
+function ManualDocRow({ doc }: { doc: DocumentInfo }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-sidebar-border/60 px-4 py-2 text-xs text-sidebar-foreground/85">
+      <FileText className="size-3.5 shrink-0 text-sidebar-foreground/50" />
+      <div className="min-w-0 flex-1">
+        {doc.linkUrl ? (
+          <a
+            href={doc.linkUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate leading-snug hover:underline"
+          >
+            {doc.filename}
+          </a>
+        ) : (
+          <span className="block truncate leading-snug">{doc.filename}</span>
+        )}
+      </div>
+      <ItemStatus status={doc.syncStatus ?? "synced"} error={doc.syncError ?? null} />
     </div>
   )
 }

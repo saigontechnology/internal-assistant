@@ -130,6 +130,192 @@ export class DocumentsService {
     return { id: docId, filename, chunkCount, message: 'Document imported and indexed successfully' }
   }
 
+  /**
+   * Import one pasted SharePoint file URL. The resulting resource is PUBLIC —
+   * `sharepointCode` stays NULL, which every access predicate treats as
+   * "visible to all viewers". Identity for dedup/refresh is the Graph
+   * `(driveId, itemId)` pair kept in `sourceMetadata`, so pasting the same
+   * file again (even via a different link form) updates in place.
+   */
+  async importFromLink(
+    accessToken: string,
+    rawLink: string,
+    addedBy: string | null,
+  ): Promise<ImportResponse> {
+    const link = rawLink.trim()
+    const item = await this.sharepoint.resolveShareUrl(accessToken, link)
+    if (item.isFolder) {
+      throw new Error('Link points to a folder — paste links to individual files')
+    }
+    if (!this.parsers.isSupported(item.name)) {
+      throw new Error(`Unsupported file type: ${item.name}. Supported: PDF, TXT, MD, DOCX, CSV, XLSX, PPTX, PPT, PNG, JPG, JPEG`)
+    }
+
+    const existing = await this.findManualLink(item.driveId, item.itemId)
+    if (existing && existing.syncStatus === 'synced') {
+      const md = (existing.sourceMetadata ?? {}) as Record<string, unknown>
+      if (item.eTag && md.eTag === item.eTag) {
+        const chunkCount = await this.prisma.embedding.count({
+          where: { resourceId: existing.id },
+        })
+        return {
+          id: existing.id,
+          filename: existing.filename,
+          chunkCount,
+          message: 'Already indexed and up to date',
+        }
+      }
+    }
+
+    const result = await this.ingestManualLink({
+      accessToken,
+      driveId: item.driveId,
+      itemId: item.itemId,
+      name: item.name,
+      webUrl: item.webUrl,
+      eTag: item.eTag,
+      lastModifiedDateTime: item.lastModifiedDateTime,
+      link,
+      addedBy,
+      replaceId: existing?.id,
+    })
+    return {
+      id: result.id,
+      filename: item.name,
+      chunkCount: result.chunkCount,
+      message: existing
+        ? 'Document re-indexed from the latest version'
+        : 'Document imported and indexed successfully',
+    }
+  }
+
+  /**
+   * Refresh pass over every manual-link resource, run at the tail of a watcher
+   * sync. Metadata-only probe first; only changed files are re-downloaded and
+   * re-embedded. A Graph failure (403/404 covers both "deleted" and "the
+   * syncing user can't see it") keeps the existing content and records the
+   * error — a working document must never vanish because the wrong person
+   * pressed Sync.
+   */
+  async refreshManualLinks(
+    tokens: { getToken(): Promise<string> },
+  ): Promise<{ checked: number; refreshed: number; failed: number }> {
+    const rows = await this.prisma.resource.findMany({
+      where: { source: 'manual-link' },
+      orderBy: { createdAt: 'asc' },
+    })
+    let refreshed = 0
+    let failed = 0
+    for (const row of rows) {
+      const now = new Date()
+      const md = (row.sourceMetadata ?? {}) as Record<string, unknown>
+      const driveId = typeof md.driveId === 'string' ? md.driveId : ''
+      const itemId = typeof md.itemId === 'string' ? md.itemId : ''
+      try {
+        if (!driveId || !itemId) {
+          throw new Error('missing driveId/itemId in source metadata')
+        }
+        const token = await tokens.getToken()
+        const meta = await this.sharepoint.getItemMeta(token, driveId, itemId)
+        if (row.syncStatus === 'synced' && meta.eTag && meta.eTag === md.eTag) {
+          await this.prisma.resource.update({
+            where: { id: row.id },
+            data: { lastSyncAttempt: now, syncError: null },
+          })
+          continue
+        }
+        await this.ingestManualLink({
+          accessToken: token,
+          driveId,
+          itemId,
+          name: meta.name,
+          webUrl: meta.webUrl,
+          eTag: meta.eTag,
+          lastModifiedDateTime: meta.lastModifiedDateTime,
+          link: typeof md.link === 'string' ? md.link : (row.sharepointUrl ?? ''),
+          addedBy: typeof md.addedBy === 'string' ? md.addedBy : null,
+          replaceId: row.id,
+        })
+        refreshed++
+      } catch (err) {
+        failed++
+        await this.prisma.resource
+          .update({
+            where: { id: row.id },
+            data: {
+              syncError: err instanceof Error ? err.message : String(err),
+              lastSyncAttempt: now,
+            },
+          })
+          .catch(() => {})
+      }
+    }
+    return { checked: rows.length, refreshed, failed }
+  }
+
+  /** Manual-link identity lookup: `(driveId, itemId)` inside `sourceMetadata`. */
+  private async findManualLink(driveId: string, itemId: string) {
+    return this.prisma.resource.findFirst({
+      where: {
+        source: 'manual-link',
+        AND: [
+          { sourceMetadata: { path: ['driveId'], equals: driveId } },
+          { sourceMetadata: { path: ['itemId'], equals: itemId } },
+        ],
+      },
+    })
+  }
+
+  /** Download + parse + embed one manual-link file; atomically replaces `replaceId` if given. */
+  private async ingestManualLink(args: {
+    accessToken: string
+    driveId: string
+    itemId: string
+    name: string
+    webUrl: string
+    eTag: string
+    lastModifiedDateTime: string
+    link: string
+    addedBy: string | null
+    replaceId?: string
+  }): Promise<{ id: string; chunkCount: number }> {
+    if (!this.parsers.isSupported(args.name)) {
+      throw new Error(`Unsupported file type: ${args.name}`)
+    }
+    const buffer = await this.sharepoint.downloadFile(args.accessToken, args.driveId, args.itemId)
+    const parsed = await this.parsers.parseBuffer(buffer, args.name)
+    const fileType = getFileType(args.name)
+    const chunks = splitText(
+      parsed.content,
+      { ...parsed.metadata, sharepoint_item_id: args.itemId },
+      this.settings.chunkSize,
+      this.settings.chunkOverlap,
+      buildChunkHeader({ filename: args.name, fileType }),
+    )
+    const docId = randomUUID().replace(/-/g, '').slice(0, 12)
+    const chunkCount = await this.embeddings.addDocument(
+      {
+        id: docId,
+        filename: args.name,
+        fileType,
+        source: 'manual-link',
+        sharepointUrl: args.webUrl,
+        sourceMetadata: {
+          link: args.link,
+          driveId: args.driveId,
+          itemId: args.itemId,
+          eTag: args.eTag,
+          lastModifiedDateTime: args.lastModifiedDateTime,
+          addedBy: args.addedBy,
+        },
+        lastSyncAttempt: new Date(),
+      },
+      chunks,
+      args.replaceId,
+    )
+    return { id: docId, chunkCount }
+  }
+
   async listDocuments(
     opts: { viewer?: ViewerProfile; publicOnly?: boolean } = {},
   ): Promise<DocumentInfo[]> {

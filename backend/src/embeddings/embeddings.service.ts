@@ -16,8 +16,11 @@ export interface DocumentDescriptor {
   id: string
   filename: string
   fileType: string
-  source: 'upload' | 'sharepoint'
+  source: 'upload' | 'sharepoint' | 'manual-link'
   sharepointUrl?: string
+  /** Provenance blob (`resources.source_metadata`). Manual links store their Graph identity here. */
+  sourceMetadata?: Record<string, unknown>
+  lastSyncAttempt?: Date
 }
 
 export interface ViewerProfile {
@@ -175,7 +178,12 @@ export class EmbeddingsService implements EmbeddingProbe {
     return embedding.length
   }
 
-  async addDocument(doc: DocumentDescriptor, chunks: TextChunk[]): Promise<number> {
+  /**
+   * `replaceId` makes the insert an atomic swap: the old resource row (and its
+   * embeddings, via FK cascade) is deleted in the same transaction that writes
+   * the new one, so a re-ingest never leaves a document half-missing.
+   */
+  async addDocument(doc: DocumentDescriptor, chunks: TextChunk[], replaceId?: string): Promise<number> {
     const vectors = await this.generateEmbeddings(chunks.map((c) => c.text))
 
     // A model swap between ingest runs is the one way a wrong-dimension vector
@@ -200,6 +208,9 @@ export class EmbeddingsService implements EmbeddingProbe {
     // SharePoint sync could hold a meaningful slice of the pool for minutes
     // while chat traffic queued behind it.
     await this.prisma.$transaction(async (tx) => {
+      if (replaceId) {
+        await tx.resource.deleteMany({ where: { id: replaceId } })
+      }
       await tx.resource.create({
         data: {
           id: doc.id,
@@ -207,6 +218,8 @@ export class EmbeddingsService implements EmbeddingProbe {
           fileType: doc.fileType,
           source: doc.source,
           sharepointUrl: doc.sharepointUrl,
+          sourceMetadata: doc.sourceMetadata as object | undefined,
+          lastSyncAttempt: doc.lastSyncAttempt,
         },
       })
 

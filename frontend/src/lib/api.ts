@@ -5,7 +5,7 @@ export interface DocumentInfo {
   filename: string
   fileType: string
   chunkCount: number
-  source: "sharepoint" | "upload" | "sharepoint-list"
+  source: "sharepoint" | "upload" | "sharepoint-list" | "manual-link"
   sharepointUrl?: string
   /** "Open in browser" URL — DocIdRedir for list rows, webUrl for imports. */
   linkUrl?: string
@@ -226,6 +226,22 @@ export async function importDocuments(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ files }),
+  })
+
+  return res.json()
+}
+
+/** Paste-a-link import: any signed-in user; results are public documents kept in sync. */
+export async function importDocumentLinks(
+  links: string[]
+): Promise<{
+  imported: { id: string; filename: string; chunkCount: number; message: string }[]
+  errors: { file: string; error: string }[]
+}> {
+  const res = await apiFetch("/api/documents/import-links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ links }),
   })
 
   return res.json()

@@ -13,6 +13,23 @@ interface GraphDriveItem {
   parentReference?: { driveId?: string; siteId?: string }
 }
 
+export interface ResolvedShareItem {
+  driveId: string
+  itemId: string
+  name: string
+  webUrl: string
+  eTag: string
+  lastModifiedDateTime: string
+  isFolder: boolean
+}
+
+export interface DriveItemMeta {
+  name: string
+  webUrl: string
+  eTag: string
+  lastModifiedDateTime: string
+}
+
 /**
  * Wraps Microsoft Graph behind a small, typed surface. Each method takes
  * either a raw `accessToken` (for callers that already have one) or a
@@ -118,6 +135,47 @@ export class SharepointService {
       chunks.push(Buffer.from(chunk))
     }
     return Buffer.concat(chunks)
+  }
+
+  /**
+   * Dereference an arbitrary SharePoint/OneDrive file URL to its driveItem via
+   * the Graph shares API (`/shares/u!{base64url}/driveItem`). Works for any
+   * URL the caller's delegated token can access — including plain webUrls and
+   * "Copy link" sharing URLs.
+   */
+  async resolveShareUrl(accessToken: string, url: string): Promise<ResolvedShareItem> {
+    const shareId = 'u!' + Buffer.from(url).toString('base64url')
+    const item = await this.client(accessToken)
+      .api(`/shares/${shareId}/driveItem`)
+      .select('id,name,webUrl,eTag,lastModifiedDateTime,file,folder,parentReference')
+      .get()
+    const driveId = item.parentReference?.driveId
+    if (!driveId) {
+      throw new Error('Link resolved to an item without a drive (site or list link?)')
+    }
+    return {
+      driveId,
+      itemId: item.id,
+      name: item.name,
+      webUrl: item.webUrl,
+      eTag: item.eTag ?? '',
+      lastModifiedDateTime: item.lastModifiedDateTime ?? '',
+      isFolder: Boolean(item.folder),
+    }
+  }
+
+  /** Metadata-only probe ($select, no content) — the manual-link refresh phase's change check. */
+  async getItemMeta(accessToken: string, driveId: string, itemId: string): Promise<DriveItemMeta> {
+    const item = await this.client(accessToken)
+      .api(`/drives/${driveId}/items/${itemId}`)
+      .select('name,webUrl,eTag,lastModifiedDateTime')
+      .get()
+    return {
+      name: item.name,
+      webUrl: item.webUrl,
+      eTag: item.eTag ?? '',
+      lastModifiedDateTime: item.lastModifiedDateTime ?? '',
+    }
   }
 
   async getFileName(accessToken: string, driveId: string, itemId: string): Promise<string> {

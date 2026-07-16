@@ -25,6 +25,9 @@ import { DocumentsService } from './documents.service.js'
 import { SharepointService } from '../sharepoint/sharepoint.service.js'
 import type { ImportRequest } from '../common/types.js'
 
+/** Bound on one `/import-links` request — resolve+download+embed is sequential and slow. */
+const MAX_LINKS_PER_REQUEST = 20
+
 /**
  * `/api/documents/*`. Every route goes through the global SessionGuard;
  * mutations additionally require an admin. The `/upload` endpoint reads the
@@ -104,6 +107,48 @@ export class DocumentsController {
       }
     }
     // 207 Multi-Status when any per-file error occurred, matching legacy contract.
+    res.status(errors.length > 0 ? 207 : 200).json({ imported: results, errors })
+  }
+
+  /**
+   * Bulk import by pasted SharePoint file URLs. Any signed-in user; each link
+   * is resolved with the caller's delegated Graph token, so they can only
+   * index files they can read — but the result is PUBLIC to every assistant
+   * user (NULL sharepoint_code) and is refreshed on future sync runs.
+   */
+  @Post('import-links')
+  @HttpCode(HttpStatus.OK)
+  async importLinks(@Req() req: Request, @Res() res: Response) {
+    const body = req.body as { links?: unknown }
+    const links = Array.isArray(body?.links)
+      ? [...new Set(body.links.filter((l): l is string => typeof l === 'string').map((l) => l.trim()).filter(Boolean))]
+      : []
+    if (links.length === 0) {
+      res.status(HttpStatus.BAD_REQUEST).json({ error: 'No links provided' })
+      return
+    }
+    if (links.length > MAX_LINKS_PER_REQUEST) {
+      res.status(HttpStatus.BAD_REQUEST).json({
+        error: `Too many links — at most ${MAX_LINKS_PER_REQUEST} per request`,
+      })
+      return
+    }
+    const session = (req as Request & { session: Session }).session
+    const accessToken = await this.sharepoint.tokenFor(session)
+
+    const results = []
+    const errors: { file: string; error: string }[] = []
+    for (const link of links) {
+      try {
+        results.push(await this.documents.importFromLink(accessToken, link, session.username))
+      } catch (err) {
+        errors.push({
+          file: link,
+          error: err instanceof Error ? err.message : 'Import failed',
+        })
+      }
+    }
+    // 207 Multi-Status when any per-link error occurred, matching `/import`.
     res.status(errors.length > 0 ? 207 : 200).json({ imported: results, errors })
   }
 

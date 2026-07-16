@@ -8,7 +8,7 @@ export interface DocumentInfo {
   filename: string
   fileType: string
   chunkCount: number
-  source: 'sharepoint' | 'upload' | 'sharepoint-list'
+  source: 'sharepoint' | 'upload' | 'sharepoint-list' | 'manual-link'
   sharepointUrl?: string
   /**
    * "Open in browser" URL. For sharepoint-list rows this is the original
