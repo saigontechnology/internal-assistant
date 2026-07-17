@@ -140,8 +140,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             {/* h-full is load-bearing: the table pages' `h-full min-h-0` chains
                 (and their sticky headers) need a definite height to resolve
                 against. Pages taller than the viewport still overflow into
-                <main>'s scroll as before. */}
-            <div className="mx-auto h-full max-w-6xl">{children}</div>
+                <main>'s scroll as before. Full width — narrow pages (settings,
+                chat model) constrain themselves with their own max-w. */}
+            <div className="h-full">{children}</div>
           </main>
         </div>
       </div>
