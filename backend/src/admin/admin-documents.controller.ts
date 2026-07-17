@@ -43,15 +43,21 @@ export class AdminDocumentsController {
    * lists. Unlike `GET /api/documents` this is NOT filtered by the caller's
    * job profile — an admin sees the whole index, including metadata-only rows
    * nobody has been able to fetch yet.
+   *
+   * Offset-paginated (`page` is 0-based) — the corpus is a few hundred rows,
+   * so a cursor buys nothing here. The aggregate counts are computed over the
+   * same filter so the stat cards describe the whole match, not just the
+   * loaded page.
    */
   @Get('/')
   async list(
     @Query('q') q?: string,
     @Query('status') status?: string,
     @Query('take') take?: string,
-    @Query('cursor') cursor?: string,
+    @Query('page') pageParam?: string,
   ) {
     const limit = Math.min(Math.max(Number(take) || DEFAULT_TAKE, 1), MAX_TAKE)
+    const pageIndex = Math.max(Number(pageParam) || 0, 0)
 
     const where: Prisma.ResourceWhereInput = {
       ...(status ? { syncStatus: status } : {}),
@@ -65,16 +71,20 @@ export class AdminDocumentsController {
         : {}),
     }
 
-    const rows = await this.prisma.resource.findMany({
-      where,
-      orderBy: { updatedAt: 'desc' },
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      include: { _count: { select: { embeddings: true } } },
-    })
-
-    const hasMore = rows.length > limit
-    const page = hasMore ? rows.slice(0, limit) : rows
+    const [page, total, pendingTotal, chunkTotal] = await Promise.all([
+      this.prisma.resource.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip: pageIndex * limit,
+        take: limit,
+        include: { _count: { select: { embeddings: true } } },
+      }),
+      this.prisma.resource.count({ where }),
+      this.prisma.resource.count({
+        where: { ...where, syncStatus: { not: 'synced' } },
+      }),
+      this.prisma.embedding.count({ where: { resource: { is: where } } }),
+    ])
 
     // Owning lists, batched — one query for the whole page rather than N.
     const items = page.length
@@ -112,7 +122,9 @@ export class AdminDocumentsController {
         lists: listsByResource.get(r.id) ?? [],
         updatedAt: r.updatedAt,
       })),
-      nextCursor: hasMore ? page[page.length - 1].id : null,
+      total,
+      pendingTotal,
+      chunkTotal,
     }
   }
 

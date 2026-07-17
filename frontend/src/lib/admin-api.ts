@@ -76,15 +76,26 @@ export interface AdminDocument {
   updatedAt: string
 }
 
+export interface AdminDocumentsPage {
+  documents: AdminDocument[]
+  /** Totals over the whole filtered match, not just this page. */
+  total: number
+  pendingTotal: number
+  chunkTotal: number
+}
+
 export async function fetchAdminDocuments(opts: {
   q?: string
   status?: string
-  cursor?: string
-} = {}): Promise<{ documents: AdminDocument[]; nextCursor: string | null }> {
+  /** 0-based. */
+  page?: number
+  take?: number
+} = {}): Promise<AdminDocumentsPage> {
   const params = new URLSearchParams()
   if (opts.q) params.set("q", opts.q)
   if (opts.status) params.set("status", opts.status)
-  if (opts.cursor) params.set("cursor", opts.cursor)
+  if (opts.page) params.set("page", String(opts.page))
+  if (opts.take) params.set("take", String(opts.take))
   const qs = params.toString()
   const res = await apiFetch(`/api/admin/documents${qs ? `?${qs}` : ""}`)
   return res.json()

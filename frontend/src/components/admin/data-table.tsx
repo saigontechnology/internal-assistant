@@ -22,6 +22,16 @@ export interface DataTableColumn<T> {
   cell: (row: T) => ReactNode
 }
 
+/** Server-side pagination: `rows` is the current page, the caller refetches. */
+export interface DataTableServerPagination {
+  /** 0-based. */
+  page: number
+  pageSize: number
+  /** Row count of the whole (filtered) result, not just this page. */
+  total: number
+  onPageChange: (page: number) => void
+}
+
 interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   rows: T[]
@@ -29,10 +39,11 @@ interface DataTableProps<T> {
   rowClassName?: (row: T) => string | undefined
   /**
    * Client-side pagination: slices `rows` and renders a pager under the
-   * table. Omit when the caller pages server-side (pass `footer` instead,
-   * e.g. a Load-more button).
+   * table. Mutually exclusive with `pagination`.
    */
   pageSize?: number
+  /** Server-side pagination: renders the same pager, caller owns the state. */
+  pagination?: DataTableServerPagination
   /** Pinned inside the panel below the table, outside the scroll region. */
   footer?: ReactNode
 }
@@ -49,23 +60,29 @@ export function DataTable<T>({
   rowKey,
   rowClassName,
   pageSize,
+  pagination,
   footer,
 }: DataTableProps<T>) {
-  const [page, setPage] = useState(0)
+  const [localPage, setLocalPage] = useState(0)
 
+  const size = pagination?.pageSize ?? pageSize
+  const total = pagination ? pagination.total : rows.length
   // Clamped so the view stays valid when the list shrinks (e.g. a patch
   // response replacing the array) while the user sits on the last page.
-  const pageCount = pageSize ? Math.max(1, Math.ceil(rows.length / pageSize)) : 1
-  const safePage = Math.min(page, pageCount - 1)
-  const visible = pageSize
-    ? rows.slice(safePage * pageSize, (safePage + 1) * pageSize)
-    : rows
+  const pageCount = size ? Math.max(1, Math.ceil(total / size)) : 1
+  const safePage = Math.min(pagination ? pagination.page : localPage, pageCount - 1)
+  const setPage = pagination ? pagination.onPageChange : setLocalPage
+  const visible =
+    !pagination && size ? rows.slice(safePage * size, (safePage + 1) * size) : rows
 
   return (
     <Panel className="flex min-h-0 flex-1 flex-col">
       <Table containerClassName="min-h-0 flex-1">
-        <TableHeader sticky className="bg-muted/40">
-          <TableRow className="hover:bg-transparent">
+        {/* The muted tint lives on the <tr>, painting over the thead's opaque
+            bg-card — putting it on the TableHeader would have tailwind-merge
+            drop bg-card and leave the sticky header translucent. */}
+        <TableHeader sticky>
+          <TableRow className="bg-muted/40 hover:bg-muted/40">
             {columns.map((c) => (
               <TableHead key={c.key} className={c.headClassName}>
                 {c.header}
@@ -86,11 +103,10 @@ export function DataTable<T>({
         </TableBody>
       </Table>
 
-      {pageSize !== undefined && rows.length > pageSize && (
+      {size !== undefined && total > size && (
         <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-2">
           <span className="text-xs tabular-nums text-muted-foreground">
-            {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, rows.length)} of{" "}
-            {rows.length}
+            {safePage * size + 1}–{safePage * size + visible.length} of {total}
           </span>
           <div className="flex items-center gap-2">
             <Button

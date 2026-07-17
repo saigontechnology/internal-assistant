@@ -61,9 +61,12 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
   return "destructive"
 }
 
+const PAGE_SIZE = 25
+
 export function AdminDocumentsPage() {
   const [docs, setDocs] = useState<AdminDocument[] | null>(null)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [page, setPage] = useState(0)
+  const [totals, setTotals] = useState({ total: 0, pendingTotal: 0, chunkTotal: 0 })
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState("")
   const [status, setStatus] = useState("all")
@@ -76,14 +79,16 @@ export function AdminDocumentsPage() {
       const res = await fetchAdminDocuments({
         q: q || undefined,
         status: status === "all" ? undefined : status,
+        page,
+        take: PAGE_SIZE,
       })
       setDocs(res.documents)
-      setNextCursor(res.nextCursor)
+      setTotals({ total: res.total, pendingTotal: res.pendingTotal, chunkTotal: res.chunkTotal })
       setError(null)
     } catch (err) {
       setError((err as Error).message)
     }
-  }, [q, status])
+  }, [q, status, page])
 
   // Debounced so typing in the search box doesn't fire a request per keystroke.
   useEffect(() => {
@@ -91,27 +96,15 @@ export function AdminDocumentsPage() {
     return () => clearTimeout(t)
   }, [load])
 
-  const loadMore = async () => {
-    if (!nextCursor) return
-    try {
-      const res = await fetchAdminDocuments({
-        q: q || undefined,
-        status: status === "all" ? undefined : status,
-        cursor: nextCursor,
-      })
-      setDocs((prev) => [...(prev ?? []), ...res.documents])
-      setNextCursor(res.nextCursor)
-    } catch (err) {
-      toast.error((err as Error).message)
-    }
-  }
-
   const doDelete = async (doc: AdminDocument) => {
     setBusy(doc.id)
     try {
       await deleteAdminDocument(doc.id)
-      setDocs((prev) => (prev ?? []).filter((d) => d.id !== doc.id))
       toast.success(`Deleted ${doc.filename}`)
+      // Deleting the last row of a later page: step back one (the load effect
+      // refetches); otherwise refetch in place to backfill from the next page.
+      if (docs?.length === 1 && page > 0) setPage(page - 1)
+      else await load()
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -148,9 +141,6 @@ export function AdminDocumentsPage() {
       setSyncing(false)
     }
   }
-
-  const totalChunks = docs?.reduce((sum, d) => sum + d.chunkCount, 0) ?? 0
-  const pendingCount = docs?.filter((d) => d.syncStatus !== "synced").length ?? 0
 
   const columns: DataTableColumn<AdminDocument>[] = [
     {
@@ -280,14 +270,14 @@ export function AdminDocumentsPage() {
 
       {docs && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <StatCard label="Documents" value={docs.length} icon={FileText} />
-          <StatCard label="Embedding chunks" value={totalChunks} icon={Stack} tone="primary" />
+          <StatCard label="Documents" value={totals.total} icon={FileText} />
+          <StatCard label="Embedding chunks" value={totals.chunkTotal} icon={Stack} tone="primary" />
           <StatCard
             label="Needs attention"
-            value={pendingCount}
-            hint={pendingCount ? "not fully synced" : "all synced"}
+            value={totals.pendingTotal}
+            hint={totals.pendingTotal ? "not fully synced" : "all synced"}
             icon={Clock}
-            tone={pendingCount ? "destructive" : "default"}
+            tone={totals.pendingTotal ? "destructive" : "default"}
           />
         </div>
       )}
@@ -298,11 +288,20 @@ export function AdminDocumentsPage() {
           <Input
             placeholder="Search filename or code…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              setQ(e.target.value)
+              setPage(0)
+            }}
             className="pl-9"
           />
         </div>
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={status}
+          onValueChange={(v) => {
+            setStatus(v)
+            setPage(0)
+          }}
+        >
           <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>
@@ -336,15 +335,12 @@ export function AdminDocumentsPage() {
           columns={columns}
           rows={docs}
           rowKey={(d) => d.id}
-          footer={
-            nextCursor ? (
-              <div className="flex shrink-0 justify-center border-t border-border p-2">
-                <Button variant="outline" onClick={loadMore}>
-                  Load more
-                </Button>
-              </div>
-            ) : undefined
-          }
+          pagination={{
+            page,
+            pageSize: PAGE_SIZE,
+            total: totals.total,
+            onPageChange: setPage,
+          }}
         />
       )}
 
