@@ -318,10 +318,43 @@ export class DistributionListService {
 
   /** ALL lists, unfiltered. Admin-only (`/api/admin/distribution-lists`). */
   async listAllForApi() {
-    const rows = await this.prisma.distributionList.findMany({
-      orderBy: [{ lastSyncStatus: 'asc' }, { displayName: 'asc' }],
+    // Counters come from the item mirror (the index as it is now), not the
+    // row's per-run snapshot: a sync run by an admin whose token can't reach
+    // a site writes `error / 0 synced` onto that row, hiding documents that
+    // earlier runs (by users with access) did sync and that are still live.
+    const [rows, grouped] = await Promise.all([
+      this.prisma.distributionList.findMany({
+        orderBy: [{ lastSyncStatus: 'asc' }, { displayName: 'asc' }],
+      }),
+      this.prisma.distributionListItem.groupBy({
+        by: ['distributionListId', 'syncStatus'],
+        _count: { _all: true },
+      }),
+    ])
+
+    const live = new Map<string, { synced: number; pending: number; failed: number }>()
+    for (const g of grouped) {
+      const c = live.get(g.distributionListId) ?? { synced: 0, pending: 0, failed: 0 }
+      if (g.syncStatus === 'synced') c.synced += g._count._all
+      else if (g.syncStatus === 'pending' || g.syncStatus === 'pending_access') c.pending += g._count._all
+      else c.failed += g._count._all
+      live.set(g.distributionListId, c)
+    }
+
+    return rows.map((r) => {
+      const c = live.get(r.id)
+      return {
+        ...this.mapListRow(r),
+        counters: {
+          synced: c?.synced ?? 0,
+          pending: c?.pending ?? 0,
+          failed: c?.failed ?? 0,
+          // Items removed from the list are deleted from the mirror, so
+          // "removed" only exists as the last run's counter.
+          removed: r.itemsRemoved,
+        },
+      }
     })
-    return rows.map((r) => this.mapListRow(r))
   }
 
   /** Only the lists the viewer's job profile can access. User-facing sidebar. */
