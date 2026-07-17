@@ -137,7 +137,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </header>
 
           <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-            <div className="mx-auto max-w-6xl">{children}</div>
+            {/* h-full is load-bearing: the table pages' `h-full min-h-0` chains
+                (and their sticky headers) need a definite height to resolve
+                against. Pages taller than the viewport still overflow into
+                <main>'s scroll as before. */}
+            <div className="mx-auto h-full max-w-6xl">{children}</div>
           </main>
         </div>
       </div>

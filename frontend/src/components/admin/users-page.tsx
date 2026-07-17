@@ -23,14 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -43,12 +35,15 @@ import {
   type UpdateUserPatch,
 } from "@/lib/admin-api"
 import { useAuth } from "@/lib/auth"
-import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
+import { ErrorBanner, PageHeader, StatCard } from "./admin-ui"
+import { DataTable, type DataTableColumn } from "./data-table"
 
 function formatDate(value: string | null): string {
   if (!value) return "—"
   return new Date(value).toLocaleString()
 }
+
+const PAGE_SIZE = 25
 
 export function AdminUsersPage() {
   const { user: me } = useAuth()
@@ -127,6 +122,180 @@ export function AdminUsersPage() {
   const adminCount = users.filter((u) => u.role === "admin").length
   const activeCount = users.filter((u) => u.isActive).length
 
+  const isSelf = (u: AdminUser) =>
+    u.email.toLowerCase() === (me?.username ?? "").toLowerCase()
+
+  const columns: DataTableColumn<AdminUser>[] = [
+    {
+      key: "email",
+      header: "Email",
+      headClassName: "pl-4",
+      cellClassName: "pl-4 font-medium",
+      cell: (u) => (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="truncate">{u.email}</span>
+            {isSelf(u) && <Badge variant="secondary">you</Badge>}
+          </div>
+          {u.lastError && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="mt-0.5 flex w-fit items-center gap-1 text-xs text-destructive">
+                  <WarningCircle className="size-3" /> sync error
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-sm">{u.lastError}</TooltipContent>
+            </Tooltip>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "profile",
+      header: "Job profile",
+      cell: (u) => (
+        <div className="flex items-center gap-2">
+          <span className="text-sm">
+            {u.jobTitle || "—"}
+            <span className="text-muted-foreground"> · {u.department || "—"}</span>
+          </span>
+          {u.profileOverride && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline">pinned</Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                Set manually. Azure AD will not overwrite it.
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "admin",
+      header: "Admin",
+      headClassName: "text-center",
+      cellClassName: "text-center",
+      cell: (u) => (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Switch
+                checked={u.role === "admin"}
+                disabled={busy === u.email || isSelf(u)}
+                onCheckedChange={(next) =>
+                  patch(
+                    u.email,
+                    { role: next ? "admin" : "user" },
+                    next ? `${u.email} is now an admin` : `${u.email} is no longer an admin`,
+                  )
+                }
+                aria-label="Admin role"
+              />
+            </span>
+          </TooltipTrigger>
+          {isSelf(u) && (
+            <TooltipContent>You cannot remove your own admin role</TooltipContent>
+          )}
+        </Tooltip>
+      ),
+    },
+    {
+      key: "active",
+      header: "Active",
+      headClassName: "text-center",
+      cellClassName: "text-center",
+      cell: (u) => (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Switch
+                checked={u.isActive}
+                disabled={busy === u.email || isSelf(u)}
+                onCheckedChange={(next) =>
+                  patch(
+                    u.email,
+                    { isActive: next },
+                    next ? `${u.email} reactivated` : `${u.email} deactivated`,
+                  )
+                }
+                aria-label="Account active"
+              />
+            </span>
+          </TooltipTrigger>
+          {isSelf(u) && (
+            <TooltipContent>You cannot deactivate your own account</TooltipContent>
+          )}
+        </Tooltip>
+      ),
+    },
+    {
+      key: "sync",
+      header: "Can sync",
+      headClassName: "text-center",
+      cellClassName: "text-center",
+      cell: (u) => (
+        <Switch
+          checked={u.isAllowedToSync}
+          disabled={busy === u.email}
+          onCheckedChange={(next) =>
+            patch(
+              u.email,
+              { isAllowedToSync: next },
+              next ? "Sync access granted" : "Sync access revoked",
+            )
+          }
+          aria-label="Can trigger sync"
+        />
+      ),
+    },
+    {
+      key: "lastSync",
+      header: "Last sync",
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (u) => formatDate(u.lastSync),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      headClassName: "text-right",
+      cellClassName: "text-right",
+      cell: (u) => (
+        <div className="flex justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === u.email}
+                onClick={() => setEditing(u)}
+                aria-label="Edit job profile"
+              >
+                <PencilSimple />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit job profile</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === u.email}
+                onClick={() => resync(u.email)}
+                aria-label="Force profile resync"
+              >
+                <ArrowsClockwise />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Force profile resync</TooltipContent>
+          </Tooltip>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
       <PageHeader
@@ -146,166 +315,13 @@ export function AdminUsersPage() {
         />
       </div>
 
-      <Panel className="min-h-0 flex-1">
-        <Table containerClassName="h-full">
-          <TableHeader sticky className="bg-muted/40">
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="pl-4">Email</TableHead>
-              <TableHead>Job profile</TableHead>
-              <TableHead className="text-center">Admin</TableHead>
-              <TableHead className="text-center">Active</TableHead>
-              <TableHead className="text-center">Can sync</TableHead>
-              <TableHead>Last sync</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((u) => {
-              const isSelf = u.email.toLowerCase() === (me?.username ?? "").toLowerCase()
-              const disabled = busy === u.email
-              return (
-                <TableRow key={u.email} className={u.isActive ? "" : "opacity-55"}>
-                  <TableCell className="pl-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate">{u.email}</span>
-                      {isSelf && <Badge variant="secondary">you</Badge>}
-                    </div>
-                    {u.lastError && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="mt-0.5 flex w-fit items-center gap-1 text-xs text-destructive">
-                            <WarningCircle className="size-3" /> sync error
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-sm">{u.lastError}</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">
-                        {u.jobTitle || "—"}
-                        <span className="text-muted-foreground"> · {u.department || "—"}</span>
-                      </span>
-                      {u.profileOverride && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="outline">pinned</Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Set manually. Azure AD will not overwrite it.
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="text-center">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <Switch
-                            checked={u.role === "admin"}
-                            disabled={disabled || isSelf}
-                            onCheckedChange={(next) =>
-                              patch(
-                                u.email,
-                                { role: next ? "admin" : "user" },
-                                next ? `${u.email} is now an admin` : `${u.email} is no longer an admin`,
-                              )
-                            }
-                            aria-label="Admin role"
-                          />
-                        </span>
-                      </TooltipTrigger>
-                      {isSelf && (
-                        <TooltipContent>You cannot remove your own admin role</TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TableCell>
-
-                  <TableCell className="text-center">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <Switch
-                            checked={u.isActive}
-                            disabled={disabled || isSelf}
-                            onCheckedChange={(next) =>
-                              patch(
-                                u.email,
-                                { isActive: next },
-                                next ? `${u.email} reactivated` : `${u.email} deactivated`,
-                              )
-                            }
-                            aria-label="Account active"
-                          />
-                        </span>
-                      </TooltipTrigger>
-                      {isSelf && (
-                        <TooltipContent>You cannot deactivate your own account</TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TableCell>
-
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={u.isAllowedToSync}
-                      disabled={disabled}
-                      onCheckedChange={(next) =>
-                        patch(
-                          u.email,
-                          { isAllowedToSync: next },
-                          next ? "Sync access granted" : "Sync access revoked",
-                        )
-                      }
-                      aria-label="Can trigger sync"
-                    />
-                  </TableCell>
-
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(u.lastSync)}
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={disabled}
-                            onClick={() => setEditing(u)}
-                            aria-label="Edit job profile"
-                          >
-                            <PencilSimple />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit job profile</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={disabled}
-                            onClick={() => resync(u.email)}
-                            aria-label="Force profile resync"
-                          >
-                            <ArrowsClockwise />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Force profile resync</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </Panel>
+      <DataTable
+        columns={columns}
+        rows={users}
+        rowKey={(u) => u.email}
+        rowClassName={(u) => (u.isActive ? undefined : "opacity-55")}
+        pageSize={PAGE_SIZE}
+      />
 
       {editing && (
         <EditProfileDialog

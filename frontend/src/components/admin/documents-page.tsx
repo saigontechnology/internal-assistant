@@ -33,14 +33,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -53,6 +45,7 @@ import {
   type AdminDocument,
 } from "@/lib/admin-api"
 import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
+import { DataTable, type DataTableColumn } from "./data-table"
 
 const STATUSES = [
   { value: "all", label: "All statuses" },
@@ -159,6 +152,118 @@ export function AdminDocumentsPage() {
   const totalChunks = docs?.reduce((sum, d) => sum + d.chunkCount, 0) ?? 0
   const pendingCount = docs?.filter((d) => d.syncStatus !== "synced").length ?? 0
 
+  const columns: DataTableColumn<AdminDocument>[] = [
+    {
+      key: "document",
+      header: "Document",
+      headClassName: "pl-4",
+      cellClassName: "pl-4",
+      cell: (d) => (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="max-w-xs truncate font-medium">{d.filename}</span>
+            {d.sharepointUrl && (
+              <a
+                href={d.sharepointUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Open in SharePoint"
+              >
+                <ArrowSquareOut className="size-3.5" />
+              </a>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {d.sharepointCode ?? d.source}
+            {d.sharepointVersion && ` · v${d.sharepointVersion}`}
+          </span>
+        </>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (d) => (
+        <div className="flex items-center gap-1.5">
+          <Badge variant={statusVariant(d.syncStatus)}>{d.syncStatus}</Badge>
+          {d.syncError && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <WarningCircle className="size-3.5 text-destructive" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-sm">{d.syncError}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "chunks",
+      header: "Chunks",
+      headClassName: "text-right",
+      cellClassName: "text-right tabular-nums",
+      cell: (d) => d.chunkCount,
+    },
+    {
+      key: "lists",
+      header: "Lists",
+      cell: (d) => (
+        <div className="flex flex-wrap gap-1">
+          {d.lists.length === 0 ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : (
+            d.lists.map((l) => (
+              <Badge key={l.id} variant="outline">
+                {l.displayName}
+              </Badge>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      headClassName: "text-right",
+      cellClassName: "text-right",
+      cell: (d) => (
+        <div className="flex justify-end gap-1">
+          {d.sharepointCode && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={busy === d.id}
+                  onClick={() => doResync(d)}
+                  aria-label="Re-download on next sync"
+                >
+                  <ArrowsClockwise />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Re-download on next sync</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === d.id}
+                onClick={() => setConfirmDelete(d)}
+                aria-label="Delete document"
+              >
+                <Trash className="text-destructive" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
       <PageHeader
@@ -227,120 +332,20 @@ export function AdminDocumentsPage() {
           No documents match.
         </Panel>
       ) : (
-        <>
-          <Panel className="min-h-0 flex-1">
-            <Table containerClassName="h-full">
-              <TableHeader sticky className="bg-muted/40">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-4">Document</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Chunks</TableHead>
-                  <TableHead>Lists</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {docs.map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell className="pl-4">
-                      <div className="flex items-center gap-2">
-                        <span className="max-w-xs truncate font-medium">{d.filename}</span>
-                        {d.sharepointUrl && (
-                          <a
-                            href={d.sharepointUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-muted-foreground hover:text-foreground"
-                            aria-label="Open in SharePoint"
-                          >
-                            <ArrowSquareOut className="size-3.5" />
-                          </a>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {d.sharepointCode ?? d.source}
-                        {d.sharepointVersion && ` · v${d.sharepointVersion}`}
-                      </span>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant={statusVariant(d.syncStatus)}>{d.syncStatus}</Badge>
-                        {d.syncError && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <WarningCircle className="size-3.5 text-destructive" />
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-sm">{d.syncError}</TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-right tabular-nums">{d.chunkCount}</TableCell>
-
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {d.lists.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : (
-                          d.lists.map((l) => (
-                            <Badge key={l.id} variant="outline">
-                              {l.displayName}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {d.sharepointCode && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                disabled={busy === d.id}
-                                onClick={() => doResync(d)}
-                                aria-label="Re-download on next sync"
-                              >
-                                <ArrowsClockwise />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Re-download on next sync</TooltipContent>
-                          </Tooltip>
-                        )}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={busy === d.id}
-                              onClick={() => setConfirmDelete(d)}
-                              aria-label="Delete document"
-                            >
-                              <Trash className="text-destructive" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Panel>
-
-          {nextCursor && (
-            <div className="flex shrink-0 justify-center">
-              <Button variant="outline" onClick={loadMore}>
-                Load more
-              </Button>
-            </div>
-          )}
-        </>
+        <DataTable
+          columns={columns}
+          rows={docs}
+          rowKey={(d) => d.id}
+          footer={
+            nextCursor ? (
+              <div className="flex shrink-0 justify-center border-t border-border p-2">
+                <Button variant="outline" onClick={loadMore}>
+                  Load more
+                </Button>
+              </div>
+            ) : undefined
+          }
+        />
       )}
 
       <AlertDialog

@@ -39,14 +39,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -61,6 +53,7 @@ import {
   type AdminList,
 } from "@/lib/admin-api"
 import { ErrorBanner, PageHeader, Panel, StatCard } from "./admin-ui"
+import { DataTable, type DataTableColumn } from "./data-table"
 
 export function AdminLinksPage() {
   const [lists, setLists] = useState<AdminList[] | null>(null)
@@ -155,6 +148,142 @@ export function AdminLinksPage() {
   const enabledCount = lists?.filter((l) => l.enabled).length ?? 0
   const unresolvedCount = lists?.filter((l) => !l.targetListId).length ?? 0
 
+  const columns: DataTableColumn<AdminList>[] = [
+    {
+      key: "name",
+      header: "Name",
+      headClassName: "pl-4",
+      cellClassName: "pl-4",
+      cell: (l) => (
+        <>
+          <div className="font-medium">{l.displayName}</div>
+          {l.note && (
+            <div className="max-w-xs truncate text-xs text-muted-foreground">
+              {l.note}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "url",
+      header: "SharePoint list URL",
+      cell: (l) => (
+        <>
+          <a
+            href={l.listUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex max-w-sm items-center gap-1 truncate text-sm text-muted-foreground hover:text-foreground"
+          >
+            <span className="truncate">{l.listUrl}</span>
+            <ArrowSquareOut className="size-3 shrink-0" />
+          </a>
+          {!l.targetListId && (
+            <Badge variant="destructive" className="mt-1">
+              unresolved
+            </Badge>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "lastSync",
+      header: "Last sync",
+      cell: (l) => (
+        <>
+          <div className="flex items-center gap-1.5">
+            <Badge variant={l.lastSyncStatus === "ok" ? "default" : "secondary"}>
+              {l.lastSyncStatus}
+            </Badge>
+            {l.lastSyncError && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <WarningCircle className="size-3.5 text-destructive" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">{l.lastSyncError}</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {l.counters.synced} synced
+            {l.counters.failed > 0 && ` · ${l.counters.failed} failed`}
+          </span>
+        </>
+      ),
+    },
+    {
+      key: "enabled",
+      header: "Enabled",
+      headClassName: "text-center",
+      cellClassName: "text-center",
+      cell: (l) => (
+        <Switch
+          checked={l.enabled}
+          disabled={busy === l.id}
+          onCheckedChange={(next) => toggleEnabled(l, next)}
+          aria-label="Enabled"
+        />
+      ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      headClassName: "text-right",
+      cellClassName: "text-right",
+      cell: (l) => (
+        <div className="flex justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === l.id || !l.enabled}
+                onClick={() => doSync(l)}
+                aria-label="Sync now"
+              >
+                {busy === l.id ? (
+                  <CircleNotch className="animate-spin" />
+                ) : (
+                  <ArrowsClockwise />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Sync this list now</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === l.id}
+                onClick={() => setEditing(l)}
+                aria-label="Edit"
+              >
+                <PencilSimple />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy === l.id}
+                onClick={() => setConfirmDelete(l)}
+                aria-label="Delete"
+              >
+                <Trash className="text-destructive" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
       <PageHeader
@@ -224,130 +353,12 @@ export function AdminLinksPage() {
           </div>
         </Panel>
       ) : (
-        <Panel className="min-h-0 flex-1">
-          <Table containerClassName="h-full">
-            <TableHeader sticky className="bg-muted/40">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Name</TableHead>
-                <TableHead>SharePoint list URL</TableHead>
-                <TableHead>Last sync</TableHead>
-                <TableHead className="text-center">Enabled</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lists.map((l) => (
-                <TableRow key={l.id} className={l.enabled ? "" : "opacity-55"}>
-                  <TableCell className="pl-4">
-                    <div className="font-medium">{l.displayName}</div>
-                    {l.note && (
-                      <div className="max-w-xs truncate text-xs text-muted-foreground">
-                        {l.note}
-                      </div>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    <a
-                      href={l.listUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex max-w-sm items-center gap-1 truncate text-sm text-muted-foreground hover:text-foreground"
-                    >
-                      <span className="truncate">{l.listUrl}</span>
-                      <ArrowSquareOut className="size-3 shrink-0" />
-                    </a>
-                    {!l.targetListId && (
-                      <Badge variant="destructive" className="mt-1">
-                        unresolved
-                      </Badge>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant={l.lastSyncStatus === "ok" ? "default" : "secondary"}>
-                        {l.lastSyncStatus}
-                      </Badge>
-                      {l.lastSyncError && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <WarningCircle className="size-3.5 text-destructive" />
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm">{l.lastSyncError}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {l.counters.synced} synced
-                      {l.counters.failed > 0 && ` · ${l.counters.failed} failed`}
-                    </span>
-                  </TableCell>
-
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={l.enabled}
-                      disabled={busy === l.id}
-                      onCheckedChange={(next) => toggleEnabled(l, next)}
-                      aria-label="Enabled"
-                    />
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busy === l.id || !l.enabled}
-                            onClick={() => doSync(l)}
-                            aria-label="Sync now"
-                          >
-                            {busy === l.id ? (
-                              <CircleNotch className="animate-spin" />
-                            ) : (
-                              <ArrowsClockwise />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Sync this list now</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busy === l.id}
-                            onClick={() => setEditing(l)}
-                            aria-label="Edit"
-                          >
-                            <PencilSimple />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busy === l.id}
-                            onClick={() => setConfirmDelete(l)}
-                            aria-label="Delete"
-                          >
-                            <Trash className="text-destructive" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Delete</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Panel>
+        <DataTable
+          columns={columns}
+          rows={lists}
+          rowKey={(l) => l.id}
+          rowClassName={(l) => (l.enabled ? undefined : "opacity-55")}
+        />
       )}
 
       {editing && (
